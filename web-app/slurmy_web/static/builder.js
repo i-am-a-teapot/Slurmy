@@ -32,7 +32,14 @@ if(document.body.dataset.page==='new'){
  $('#add-glob').addEventListener('click',()=>add('glob-template','globs'));
  $('#add-axiom-glob').addEventListener('click',()=>add('axiom-glob-template','axiom-globs'));
  let resourceOrder=0;
- function addResource(role,values){const node=add('resource-template',role==='limiter'?'limiter-resources':'solver-resources');node.dataset.resourceRole=role;node.dataset.resourceOrder=resourceOrder++;const caption=$('h3',node);const toggle=$('.collapse-toggle',caption);caption.textContent=role==='limiter'?'Limiter Resource':'Cluster Build for Imported Solver';if(toggle){toggle.setAttribute('aria-label',`Collapse ${caption.textContent}`);caption.prepend(toggle);}if(role==='solver')node.querySelector('[name="artifact"]').placeholder='solver';else $('.remove',node).hidden=true;fill(node,values);if(role==='limiter')updateLimiterStatus();return node;}
+ function addResource(role,values){
+  if(role==='limiter'&&values?.mode==='none'&&values.root===`${repoRoot}/implementation/build/runsolver`){values={...values,script:values.script||`${repoRoot}/implementation/build/runsolver/build.sh`,source:values.source||`${repoRoot}/implementation/build/runsolver/source`,artifact:values.artifact||'runsolver'};}
+  const node=add('resource-template',role==='limiter'?'limiter-resources':'solver-resources');node.dataset.resourceRole=role;node.dataset.resourceOrder=resourceOrder++;const caption=$('h3',node);const toggle=$('.collapse-toggle',caption);caption.textContent=role==='limiter'?'Limiter Resource':'Cluster Build for Imported Solver';if(toggle){toggle.setAttribute('aria-label',`Collapse ${caption.textContent}`);caption.prepend(toggle);}if(role==='solver')node.querySelector('[name="artifact"]').placeholder='solver';else $('.remove',node).hidden=true;fill(node,values);if(role==='limiter'){
+  const option=$('[data-limiter-build-option]',node),checkbox=$('[data-limiter-build-toggle]',node),mode=$('.resource-mode',node);
+  option.hidden=false;
+  checkbox.addEventListener('change',()=>{if(checkbox.checked){mode.value=node.dataset.lastBuildMode||'script';}else{if(mode.value!=='none')node.dataset.lastBuildMode=mode.value;mode.value='none';}});
+  updateLimiterStatus();
+ }return node;}
  $('#add-solver-resource').addEventListener('click',()=>{addResource('solver',{mode:'script',artifact:''});visibility();});
  function configurationTitle(card){const name=card.querySelector('[name="solver_name"]').value.trim(),caption=$('h3',card);const toggle=$('.collapse-toggle',caption);caption.textContent=name?`${name} Configuration`:'Solver Configuration';if(toggle){toggle.setAttribute('aria-label',`${card.classList.contains('collapsed')?'Expand':'Collapse'} ${caption.textContent}`);caption.prepend(toggle);}}
  function fill(node,values){for(const [name,value] of Object.entries(values||{})){const field=node.querySelector(`[name="${name}"]`);if(field){if(name==='cores')setCoreRequest(field,value??'1');else field.value=value??'';field.refreshShell?.();}}if(node.matches('.configuration')){configurationTitle(node);updateSolverStatus(node);queueMicrotask(()=>checkThreads(node.querySelector('[name="threads_per_core"]')));}}
@@ -77,7 +84,7 @@ if(document.body.dataset.page==='new'){
   catch(error){if(request!==limiterRequest)return;limiterCopyError(error.message);limiterPreview.textContent='Could not load this limiter.';}
  });
  limiterConfirm.addEventListener('click',()=>{if(!limiterChoice)return;$('[name="limiter"]').value=limiterChoice.invocation;$('[name="limiter"]').refreshShell?.();let card=$('#limiter-resources .resource');if(!card)card=addResource('limiter');fill(card,limiterChoice.resource);visibility();for(const input of card.querySelectorAll('[data-path]')){delete input.dataset.validated;if(input.value.trim())validatePath(input);}updateLimiterStatus();limiterDialog.close();});
- if(!limiterLoaded)addResource('limiter',editing?null:{root:`${repoRoot}/implementation/build/runsolver`,mode:'script',script:`${repoRoot}/implementation/build/runsolver/build.sh`,artifact:'runsolver',source:`${repoRoot}/implementation/build/runsolver/source`});
+ if(!limiterLoaded)addResource('limiter',editing?null:{root:`${repoRoot}/implementation/build/runsolver`,mode:'none',build_policy:'changed',script:`${repoRoot}/implementation/build/runsolver/build.sh`,artifact:'runsolver',source:`${repoRoot}/implementation/build/runsolver/source`});
  $('[name="axiom_mode"]').value=initial.axiom_globs?.length?'custom':'cluster';
  prefillExamples(form);
  const picker=$('#path-browser'),browserLocationKey='slurmy-last-browser-directory';let pickedInput=null,pickerDirectory='',pickedPathCallback=null,browseRequest=0,remoteBrowser=false;
@@ -133,7 +140,7 @@ if(document.body.dataset.page==='new'){
   const mode=rootValue('mode');document.querySelectorAll('[data-mode]').forEach(n=>n.hidden=n.dataset.mode!==mode);const problemGlobs=$('#problem-glob-selection');if(problemGlobs)problemGlobs.hidden=mode==='jobpairs';else $('#problem-selection').hidden=mode==='jobpairs';
   $('#problems-from-jobpairs').hidden=mode!=='jobpairs';$('#custom-axioms').hidden=rootValue('axiom_mode')!=='custom';const clusterHelp=$('#cluster-axioms-help');if(clusterHelp)clusterHelp.hidden=rootValue('axiom_mode')==='custom';updateProblemStatus();
   const imported=['jobpairs','configurations'].includes(mode);$('#building-create').hidden=!imported;$('#imported-build-help').hidden=!imported;
-  document.querySelectorAll('.resource').forEach(card=>{const choice=$('.resource-mode',card).value;card.querySelectorAll('[data-recipe]').forEach(n=>n.hidden=n.dataset.recipe!==choice);$('[data-resource-build]',card).hidden=choice==='none';});
+  document.querySelectorAll('.resource').forEach(card=>{const choice=$('.resource-mode',card).value;if(card.dataset.resourceRole==='limiter'){$('[data-limiter-build-toggle]',card).checked=choice!=='none';$('.resource-mode',card).closest('label').hidden=choice==='none';}card.querySelectorAll('[data-recipe]').forEach(n=>n.hidden=n.dataset.recipe!==choice);$('[data-resource-build]',card).hidden=choice==='none';});
   document.querySelectorAll('.configuration').forEach(card=>{const choice=$('.solver-build-mode',card).value;$('[data-solver-build]',card).hidden=choice==='none';updateSolverStatus(card);});updateLimiterStatus();updateStepStates();
  }
  form.addEventListener('change',visibility);visibility();

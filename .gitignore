@@ -4,7 +4,6 @@ __pycache__/
 /.venv/
 /submit.sh
 /job-results/
-/implementation/build/runsolver/runsolver
 /implementation/build/runsolver/.built-on-*
 /workflows/example-workflows/example-*/source/
 /workflows/example-workflows/example-*/bin/*

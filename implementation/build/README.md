@@ -10,6 +10,16 @@ including its GPL license. Builds require no source download. Use
 avoid a dependency on cluster-specific NUMA libraries. The three-file workflow automatically reuses
 this driver for each resource with a recipe in `building.txt`.
 
+New workflows use the included datalab-built Linux x86-64 `runsolver/runsolver`
+executable by default, without submitting a build job. In the resource limiter
+step, enable **Build the Resource Limiter on the Cluster** to compile the bundled
+source in a SLURM job. Its build-frequency selector supports **only build on first
+job or when source changes** (the new-workflow default when enabling builds), or
+**build for every job**. Existing workflows retain their saved build settings.
+The prebuilt binary runs on the cluster, not on the local computer; for another
+cluster or architecture, enable a source build. Its corresponding GPL source and
+license are included in `runsolver/source/`.
+
 In the web workflow builder, configure each solver's recipe under **Solvers**
 and the limiter's recipe under **Limiter**. Choose an existing Bash script or
 enter commands; a prebuilt executable can instead be packaged as-is. Dispatching
