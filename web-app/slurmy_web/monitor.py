@@ -4,6 +4,7 @@
 from __future__ import annotations
 from ssh_transport import connection_options
 import slurm_api
+import szs
 
 
 import base64
@@ -25,7 +26,7 @@ from typing import Any
 
 VERSION = "0.2.0"
 DEFAULT_HOST = os.environ.get("SLURMY_HOST", "datalab")
-NORMAL_TASK_RESULTS = {"ok", "time-limit", "memory-limit", "counter-satisfiable"}
+NORMAL_TASK_RESULTS = {"ok", "time-limit", "memory-limit", "counter-satisfiable", "no-success", "resource-limit"}
 SLURM_ERROR_STATES = {
     "BOOT_FAIL",
     "DEADLINE",
@@ -142,28 +143,24 @@ for directory in "${job_dirs[@]}"; do
             # Slurmy quotes every CSV field. The summary uses only numeric and enum
             # columns, which cannot themselves contain commas.
             summary_payload=$(awk -F, '
+__SZS_AWK__
                 function value(field) {
+                    gsub(/\034/, ",", field)
                     if (field ~ /^".*"$/) {
                         sub(/^"/, "", field); sub(/"$/, "", field)
                         gsub(/""/, "\"", field)
                     }
                     return field
                 }
+                { if (index($0,"(")) $0=protect_csv($0) }
                 NF >= 3 && value($1) ~ /^[0-9]+$/ {
                     id = value($1)
                     complete[id] = value($2)
                     result_status[id] = value($3)
                     if (result_status[id] == "solver-error" && value($4) == "143" && value($16) == "")
                         suspect_archive[id] = value($15)
-                    if (result_status[id] == "solver-error" && value($16) == "Timeout")
-                        result_status[id] = "time-limit"
-                    if (result_status[id] == "solver-error" && value($16) == "CounterSatisfiable")
-                        result_status[id] = "counter-satisfiable"
-                    if (result_status[id] == "solver-error" && value($16) != "" && value($4) + 0 < 128 &&
-                        tolower(value($16)) !~ /^(error|oserror|inputerror|syntaxerror|semanticerror|typeerror|usageerror)$/ &&
-                        tolower(value($16)) != "timeout" && tolower(value($16)) != "countersatisfiable")
-                        result_status[id] = "ok"
-                    szs[id] = value($16)
+                    szs[id] = szs_canonical(value($16))
+                    result_status[id] = szs_normalize(result_status[id], szs[id], value($4))
                     wall[id] = value($5)
                 }
                 END {
@@ -466,6 +463,8 @@ sacct "${accounting_options[@]}" -X -S "$start" -n -P \
     2>/dev/null | awk -F '|' -v prefix="$BASE/" 'index($9, prefix) == 1'
 printf '\0'
 """
+
+REMOTE_SNAPSHOT_SCRIPT = REMOTE_SNAPSHOT_SCRIPT.replace('__SZS_AWK__', szs.awk_library())
 
 # Recovery heartbeat: running jobs need a scheduler check, not result scans.
 REMOTE_ACTIVITY_SCRIPT = r'''
@@ -906,8 +905,8 @@ def parse_result_rows(rows: Any) -> dict[int, ResultRecord]:
             max_memory_kib=as_float(fields[10]),
             task_key=fields[13],
             archive=fields[14],
-            szs_status=fields[15] if len(fields) > 15 else '',
-            szs_output=fields[16] if len(fields) > 16 else '',
+            szs_status=szs.canonical(fields[15]) if len(fields) > 15 else '',
+            szs_output=szs.data_form(fields[16]) if len(fields) > 16 else '',
         )
     return results
 
@@ -945,17 +944,9 @@ def parse_jsonl_results(payload: str) -> dict[int, ResultRecord]:
 
 
 def normalize_szs_result(result: ResultRecord) -> None:
-    if result.status != 'solver-error':
-        return
-    szs = result.szs_status.lower()
-    if szs == 'timeout':
-        result.status = 'time-limit'
-    elif szs == 'countersatisfiable':
-        result.status = 'counter-satisfiable'
-    elif (szs and result.return_code.isdigit() and int(result.return_code) < 128
-          and szs not in {'error', 'oserror', 'inputerror', 'syntaxerror',
-                          'semanticerror', 'typeerror', 'usageerror'}):
-        result.status = 'ok'
+    result.szs_status = szs.canonical(result.szs_status)
+    result.szs_output = szs.data_form(result.szs_output)
+    result.status = szs.normalize_execution(result.status, result.szs_status, result.return_code)
 
 
 def summarize_results(job: JobSnapshot, results: dict[int, ResultRecord]) -> None:
@@ -986,7 +977,8 @@ def parse_summary(job: JobSnapshot, payload: str) -> None:
         elif len(fields) == 3 and fields[0] == "status":
             job.status_counts[fields[1]] = int(fields[2])
         elif len(fields) == 4 and fields[0] == "outcome":
-            job.outcome_counts[(fields[1], fields[2])] = int(fields[3])
+            key = (fields[1], szs.canonical(fields[2]))
+            job.outcome_counts[key] = job.outcome_counts.get(key, 0) + int(fields[3])
         elif len(fields) == 3 and fields[0] == "unresolved":
             job.unresolved_counts[fields[1]] = int(fields[2])
 

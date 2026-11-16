@@ -17,6 +17,7 @@ import shlex
 import shutil
 import sys
 import tarfile
+import szs
 from typing import Sequence
 from slurmy_archives import expand_axiom_pattern, tptp_collection_root, TPTP_DEFAULT_ROOT
 
@@ -423,6 +424,7 @@ def generate(jobpairs: Path, building: Path, limiter_file: Path,
         (assets / "submission_settings.sh").write_text(f'MAX_OUTSTANDING_DEFAULT={max_outstanding}\nBUILD_COUNT_DEFAULT={sum(build.recipe is not None for build in builds)}\nLOCAL_PROBLEM_FILES_DEFAULT={len(problems)}\nCLUSTER_PROBLEM_FILES_DEFAULT={len({task["problem"] for task in tasks if task["remote_problem"]})}\n', encoding='utf-8')
         shutil.copyfile(REPO / "implementation/job_names.py", assets / "job_names.py")
         shutil.copyfile(REPO / "implementation/tools/GetComputerInfo", assets / "GetComputerInfo")
+        (assets / "szs.sh").write_text(szs.shell_library())
         # Reuse the local build driver. Remote recipes build in a disposable
         # copy of the declared root; downloaded files preserve that layout.
         shutil.copy2(REPO / "implementation/build/slurmy-build.py", assets / "builds/driver.py")

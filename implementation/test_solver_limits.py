@@ -6,6 +6,7 @@ import shutil
 import subprocess
 import tempfile
 import tarfile
+import szs
 import unittest
 
 TEMPLATES=Path(__file__).parent/'templates'
@@ -17,6 +18,7 @@ class SolverLimitTests(unittest.TestCase):
             root=Path(folder)
             for name in ['calls/0','rootfs/runtime','results/index','progress']:(root/name).mkdir(parents=True)
             shutil.copy2(TEMPLATES/'csv.sh',root/'csv.sh')
+            (root/'szs.sh').write_text(szs.shell_library())
             (root/'calls/0/config.sh').write_text('TASK_ID=0\nTASK_KEY=abcdef\nCORES=1\nTHREADS_PER_CORE=1\nWC_LIMIT=3\nSOLVER_ROOT_REL=runtime\n')
             with (root/'calls/0/config.sh').open('a') as config:
                 config.write(f'GET_COMPUTER_INFO={int(computer_info)}\nCOMPUTER_INFO_TIMESTAMP={int(timestamp)}\nCPU_LIMIT=2\nMEM_LIMIT_MIB=100\n')
@@ -59,6 +61,15 @@ exit '''+str(code)+'\n')
 
     def test_computer_information_failure_does_not_prevent_solver_execution(self):
         self.run_pair('% SZS status Theorem\n', 'ok', code=0, computer_info=True, info_exit=1)
+
+    def test_every_official_status_is_published_with_full_name_and_correct_execution_outcome(self):
+        for name,code in szs.STATUSES.items():
+            for value in (name,code):
+                with self.subTest(value=value):
+                    row=self.run_pair('% SZS status '+value+'\n', szs.execution_status(name),code=0)
+                    self.assertEqual(row['szs_status'],name)
+        row=self.run_pair('% szs STATUS ASS(TMO,THM)\n','no-success',code=0)
+        self.assertEqual(row['szs_status'],'Assumed(Timeout,Theorem)')
 
     def test_vampire_internal_timeout_on_stdout_or_stderr(self):
         for stderr in (False,True):

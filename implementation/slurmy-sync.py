@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 from ssh_transport import connection_options
+import szs
 
 
 import argparse
@@ -31,17 +32,8 @@ DEFAULT_INTERVAL = 5.0
 JOB_ID_RE = re.compile(r"^[A-Za-z0-9._-]+$")
 TASK_LOG_RE = re.compile(r"(?:^|/)task_(\d+)_[A-Fa-f0-9]+[.]solver[.]log$")
 TASK_ERROR_RE = re.compile(r"(?:^|/)task_(\d+)_[A-Fa-f0-9]+[.]solver-stderr[.]log$")
-SZS_STATUS_RE = re.compile(rb"\bSZS\s+status\s+([A-Za-z][A-Za-z0-9_-]*)", re.IGNORECASE)
-SOLVED_SZS_STATUSES = {
-    "contradictoryaxioms",
-    "countersatisfiable",
-    "equivalent",
-    "finitelysatisfiable",
-    "satisfiable",
-    "tautologousconclusion",
-    "theorem",
-    "unsatisfiable",
-}
+SZS_STATUS_RE = re.compile(szs.STATUS_RE.pattern.encode(), re.IGNORECASE)
+SOLVED_SZS_STATUSES = {name.casefold() for name in szs.SUCCESS}
 SUMMARY_NAME = "sync-metadata.json"
 
 
@@ -362,7 +354,7 @@ def collect_szs_statuses(
         archive_name = str(record.get("archive", ""))
         status = record.get("szs_status") or by_archive.get(archive_name, {}).get(task_id)
         if status:
-            selected[task_id] = status
+            selected[task_id] = szs.canonical(status)
     return selected, warnings, len(archives)
 
 
@@ -414,13 +406,15 @@ def build_summary(
     if not task_count and records:
         task_count = max(records) + 1
     completed = sum(bool(record["complete"]) for record in records.values())
+    records = {task_id:szs.normalize_row(record) for task_id,record in records.items()}
     execution_counts = Counter(str(record["status"]) for record in records.values())
     szs_by_task, warnings, archive_count = collect_szs_statuses(
         destination, records, cache
     )
     szs_counts = Counter(szs_by_task.values())
     solved = sum(
-        status.casefold() in SOLVED_SZS_STATUSES for status in szs_by_task.values()
+        szs.successful(status) and bool(records.get(task_id, {}).get('complete'))
+        for task_id,status in szs_by_task.items()
     )
     wall_times = [
         value
@@ -734,7 +728,9 @@ def compact_sync_loop(args: argparse.Namespace, resolved_job_id=None) -> int:
                    'ServerAliveInterval=15', '-o', 'ServerAliveCountMax=3',
                    '--', args.host, 'python3', '-u', '-', job_id]
         try:
-            with exporter.open('rb') as script:
+            with tempfile.TemporaryFile() as script:
+                script.write(szs.remote_program(exporter.read_text()))
+                script.seek(0)
                 process = subprocess.Popen(command, stdin=script, stdout=subprocess.PIPE,
                                            stderr=subprocess.STDOUT, text=True)
                 assert process.stdout is not None

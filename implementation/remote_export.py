@@ -12,6 +12,7 @@ import re
 import sys
 import tarfile
 import tempfile
+import szs
 
 
 RESULT_FIELDS = ('task_id', 'complete', 'status', 'return_code', 'wall_seconds',
@@ -23,7 +24,7 @@ EXPORT_FIELDS = ('task_id', 'solver', 'problem', 'command', 'cores', 'threads_pe
                  'return_code', 'wall_seconds', 'cpu_seconds', 'user_seconds',
                  'system_seconds', 'cpu_usage_percent', 'max_virtual_memory_kib',
                  'max_memory_kib', 'timed_out', 'memory_out', 'szs_status',
-                 'szs_output', 'has_solver_stdout', 'has_solver_stderr')
+                 'szs_output', 'has_solver_stdout', 'has_solver_stderr', 'szs_status_code', 'szs_output_code')
 JOB_ID = re.compile(r'^[A-Za-z0-9][A-Za-z0-9_.-]*$')
 ARCHIVE = re.compile(r'^[A-Za-z0-9._-]+\.tar\.gz$')
 
@@ -52,7 +53,7 @@ def records(root: Path) -> dict[int, dict[str, str]]:
         with path.open(newline='', encoding='utf-8') as stream:
             for row in csv.DictReader(stream):
                 if row.get('task_id', '').isdigit():
-                    found[int(row['task_id'])] = row
+                    found[int(row['task_id'])] = szs.normalize_row(row)
     return found
 
 
@@ -64,8 +65,8 @@ def export(root: Path) -> None:
         source_files = [root / 'metadata.json', root / 'manifest.jsonl',
                         *sorted((root / 'results').glob('batch_*_task_*.csv')),
                         *sorted((root / 'results').glob('*.tar.gz'))]
-        signature = hashlib.sha256(repr([(path.name, path.stat().st_size, path.stat().st_mtime_ns)
-                                         for path in source_files if path.is_file()]).encode()).hexdigest()
+        signature = hashlib.sha256((szs.REGISTRY_VERSION + repr([(path.name, path.stat().st_size, path.stat().st_mtime_ns)
+                                         for path in source_files if path.is_file()])).encode()).hexdigest()
         signature_file = directory / '.signature'
         metadata = json.loads((root / 'metadata.json').read_text(encoding='utf-8'))
         names = export_names(metadata)
@@ -105,7 +106,9 @@ def export(root: Path) -> None:
                                wc_limit=definition.get('wc_limit', ''),
                                cpu_limit=definition.get('cpu_limit', ''),
                                mem_limit=definition.get('mem_limit', ''),
-                               has_solver_stdout='false', has_solver_stderr='false')
+                               has_solver_stdout='false', has_solver_stderr='false',
+                               szs_status_code=szs.mnemonic(result.get('szs_status')),
+                               szs_output_code=szs.data_mnemonic(result.get('szs_output')))
                     name = result.get('archive', '')
                     if ARCHIVE.fullmatch(name) and (root / 'results' / name).is_file():
                         with tarfile.open(root / 'results' / name, 'r:gz') as source:

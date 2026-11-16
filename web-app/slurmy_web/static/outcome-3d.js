@@ -41,7 +41,7 @@ try { const saved = JSON.parse(localStorage.getItem('slurmy-cube-status-order') 
 const countSort = {key: 'solver', direction: 'asc'};
 
 function make(tag, label) { const node = document.createElement(tag); if (label !== undefined) node.textContent = label; return node; }
-function labelFor(item) { return (item.label === 'Not finished' ? 'Not Finished' : item.label) + (item.source ? ` (${item.source})` : ''); }
+function labelFor(item) { return (item.label === 'Not finished' ? 'Not Finished' : (window.szsLabel?window.szsLabel(item.label):item.label)) + (item.source ? ` (${item.source})` : ''); }
 function renderTable() {
   table.replaceChildren(); legend.replaceChildren();
   const head = make('thead'), header = make('tr');

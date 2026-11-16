@@ -202,6 +202,32 @@ If the prepared submit script reports a connection loss during batch submission,
 `SLURMY_RESUME_JOB_ID=JOB_ID bash ./submit.sh` resumes its checkpointed batch
 list without rebuilding or re-uploading inputs.
 
+All 53 **Success** and 29 **NoSuccess** values published at
+[the SZS ontologies](https://szs.tptp.org/) are recognized by full name and
+three-letter mnemonic, case-insensitively. The shared catalog is
+[`szs.py`](szs.py), checked on 16 November 2026. Workers, historical monitoring,
+charts, filters and downloads normalize equivalent spellings to the official
+full name. Acronyms also work in status searches and solver-outcome filters.
+A standalone three-letter code searches that exact status category, so `CTO`
+finds CPUTimeout without also matching the text of ContradictoryAxioms.
+Unknown future values are preserved, rather than treated as recognized success.
+
+Finishing a solver-problem pair is separate from reporting an SZS Success.
+`GaveUp`, `Unknown`, `Incomplete` and other non-error NoSuccess answers finish
+the attempt but do not count as SZS success. Error statuses retain their precise
+names and are classified as execution issues. `CPUTimeout` and `WCTimeout` retain
+their distinction, including their CPU/wall timeout classification in StarExec
+exports. `Assumed(Unknown,Theorem)` / `ASS(UNK,THM)` is a NoSuccess value and is
+never counted as an established theorem. Download metadata's historical
+`solved_tasks` field counts completed attempts with a Success ontology value;
+this includes successful processing/verification and is not exclusively a proof count.
+
+The separate DataForm catalog is also supported by full name and mnemonic;
+`SAT` in a status means Satisfiable, while `Sat` in an output field means
+SaturationHerbrandModel. Standard summary downloads include the additional
+`szs_status_code` and `szs_output_code` columns; existing columns stay in place.
+StarExec downloads use the official mnemonics throughout.
+
 Each solver-problem pair's result CSV includes `szs_status` and `szs_output`; for example,
 `SZS output end Proof` records `Proof` in `szs_output`. The `time` member of a
 solver-problem pair's original result archive measures the entire per-solver-problem pair limiter invocation,

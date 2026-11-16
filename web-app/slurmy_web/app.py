@@ -2,6 +2,7 @@
 from __future__ import annotations
 from ssh_transport import connection_options
 import slurm_api
+import szs
 
 
 from dataclasses import asdict
@@ -124,13 +125,9 @@ def call_outcome(result):
                 'memory-limit': 'Memory limit'}
     if result is None:
         return 'Not finished', ''
-    szs = result.szs_status.strip()
-    if result.status == 'solver-error' and szs.casefold() in {
-            'error', 'oserror', 'inputerror', 'syntaxerror', 'semanticerror',
-            'typeerror', 'usageerror'}:
-        return 'Solver error', 'execution'
-    if szs:
-        return szs, 'solver'
+    answer = szs.canonical(result.szs_status)
+    if answer:
+        return answer, 'solver'
     label = fallback.get(result.status, result.status.replace('-', ' ').capitalize())
     source = ('resource limiter' if result.status in
               {'time-limit', 'memory-limit', 'resource-limiter-error'} else
@@ -294,7 +291,7 @@ def task_rows(job,task_ids=None):
         batch_id = job.task_batches.get(task_id, task_id // job.batch_size)
         allocation=batch_records.get(batch_id)
         if result:
-            state, wall = result.szs_status or result.status.replace('-', ' '), result.wall_seconds
+            state, wall = szs.canonical(result.szs_status) or result.status.replace('-', ' '), result.wall_seconds
             if result.status in {'resource-limiter-error', 'worker-error', 'interrupted'}:
                 state = result.status.replace('-', ' ')
             elif result.status == 'error' and not result.szs_status:
@@ -317,8 +314,11 @@ def task_rows(job,task_ids=None):
                    memory=result.max_memory_kib * 1024 if result and result.max_memory_kib is not None else None,
                    return_code=result.return_code if result else '',
                    execution_status=result.status if result else '',
-                   szs_status=result.szs_status if result else '',
-                   szs_output=result.szs_output if result else '',
+                   szs_status=szs.canonical(result.szs_status) if result else '',
+                   szs_code=szs.mnemonic(result.szs_status) if result else '',
+                   szs_ontology=szs.ontology(result.szs_status) if result else '',
+                   szs_output=szs.data_form(result.szs_output) if result else '',
+                   szs_output_code=szs.data_mnemonic(result.szs_output) if result else '',
                    will_run=will_run, reason=reason, diagnostic=diagnostic,
                    diagnostic_available=bool(not result and allocation),
                    node=(allocation.location if allocation and allocation.state.upper().startswith(('RUNNING', 'COMPLETING')) else ''),
@@ -348,6 +348,12 @@ def task_page(job,page,per_page,field,direction,query='',outcomes=None,task_ids=
         if not hasattr(job,'_view_ids'):job._view_ids=sorted(set(job.tasks)|set(job.results))
         ids=job._view_ids
     else:ids=sorted(task_ids)
+    candidate=query.strip()
+    if len(candidate)==3 and szs.mnemonic(candidate)==candidate.upper():
+        answer=szs.canonical(candidate)
+        ids=[task_id for task_id in ids if szs.base(getattr(job.results.get(task_id),'szs_status',''))==answer]
+        query=''
+    if outcomes:outcomes={(szs.canonical(label) if source=='solver' else label,source) for label,source in outcomes}
     if outcomes:ids=[task_id for task_id in ids if call_outcome(job.results.get(task_id)) in outcomes]
     start=page*per_page;end=start+per_page
     if query or field in {'state','will_run','node','reason'}:
@@ -553,7 +559,9 @@ def create_app():
     def page(template, **kwargs):
         session.setdefault('csrf', secrets.token_hex(32))
         return render_template(template, host=host(), csrf=session['csrf'],
-                               tptp_version=TPTP_DEFAULT_VERSION, tptp_default_root=TPTP_DEFAULT_ROOT, **kwargs)
+                               tptp_version=TPTP_DEFAULT_VERSION, tptp_default_root=TPTP_DEFAULT_ROOT,
+                               szs_catalog={alias: dict(name=name, code=code, ontology=szs.ontology(name), category=szs.execution_status(name))
+                                            for name,code in szs.STATUSES.items() for alias in (name,code)}, **kwargs)
 
     @app.get('/api/connection')
     def connection_settings():

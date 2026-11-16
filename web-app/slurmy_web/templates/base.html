@@ -21,6 +21,7 @@
   {% block scripts %}{% endblock %}
 </head>
 <body data-host="{{ host }}" {% block data %}{% endblock %}>
+<script id="szs-catalog" type="application/json">{{ (szs_catalog or {})|tojson }}</script>
 <aside class="sidebar">
   <a class="brand" href="{{ url_for('index', host=host) }}"><img src="/logo.svg" alt="">Slurmy<span>LOCAL WORKSPACE</span></a>
   <nav aria-label="Main navigation">

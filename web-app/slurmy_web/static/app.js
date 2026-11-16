@@ -16,6 +16,9 @@ function notice(text){const node=$('#notice');node.textContent=text;node.hidden=
 function duration(value){if(value==null)return '—';if(value===0)return '0 s';if(value<1)return `${(value*1000).toFixed(value<.01?1:0)} ms`;if(value<60)return `${value.toFixed(2)} s`;if(value<3600)return `${Math.floor(value/60)}m ${(value%60).toFixed(0)}s`;return `${Math.floor(value/3600)}h ${Math.floor(value%3600/60)}m`;}
 function memory(value){if(value==null)return '—';let i=0;const units=['B','KiB','MiB','GiB','TiB'];while(value>=1024&&i<units.length-1){value/=1024;i++;}return `${value.toFixed(i===0?0:1)} ${units[i]}`;}
 const outcomeColors={'not finished':'#87938f','theorem':'#278866','unsatisfiable':'#4479b5','satisfiable':'#9367ac','countersatisfiable':'#219a98','counter satisfiable':'#219a98','timeout':'#e7b251','time limit':'#ca842c','memory limit':'#bb684a','resourceout':'#9f5241','resource out':'#9f5241','error':'#bb555b','solver error':'#bb555b'};
+const szsCatalog=Object.assign(Object.create(null),JSON.parse(document.querySelector('#szs-catalog')?.textContent||'{}'));
+for(const [alias,info] of Object.entries(szsCatalog))outcomeColors[alias.toLowerCase()]=outcomeColors[info.name.toLowerCase()]||({'solver-error':'#bb555b','time-limit':'#e7b251','memory-limit':'#bb684a','resource-limit':'#9f5241'}[info.category]||(info.ontology==='Success'?'#278866':'#b58d48'));
+function szsLabel(value){const parts=value.match(/^Assumed\(([^,]+),([^()]+)\)$/);const info=szsCatalog[parts?'Assumed':value];if(!info)return value;const code=parts?`ASS(${parts.slice(1).map(name=>szsCatalog[name]?.code||name).join(',')})`:info.code;return `${parts?value:info.name} (${code})`;}
 const otherOutcomeColors=['#6d70b7','#a66b8b','#628b51','#ac7650','#568d9c','#a5a047'];
 let selectedOutcomes=[];
 const outcomeSelected=item=>selectedOutcomes.some(selected=>selected.label===item.label&&selected.source===item.source);
@@ -40,13 +43,13 @@ function renderOutcomes(outcomes){
  if(!total){chart.style.background='';chart.setAttribute('aria-label','No solver-problem pair outcomes yet');breakdown.append(el('p','No solver-problem pair outcomes yet.','muted'));window.outcomeCubeData=[];window.renderOutcomeCube?.([]);return;}
  let start=0,other=0;const segments=[];const labels=[];
  for(const item of items){
-  const color=outcomeColors[item.label.toLowerCase()]||otherOutcomeColors[other++%otherOutcomeColors.length];
+  const color=outcomeColors[item.label.toLowerCase()]||outcomeColors[item.label.split('(')[0].toLowerCase()]||otherOutcomeColors[other++%otherOutcomeColors.length];
   item.color=color;
   const end=start+item.count/total*100;segments.push(`${color} ${start}% ${end}%`);start=end;
   const percent=item.count/total*100;const row=el('button',undefined,'outcome-row outcome-row-button');row.type='button';row.setAttribute('aria-label',`Toggle solver-problem pairs with ${item.label}${item.source?` (${item.source})`:''}`);const active=outcomeSelected(item);row.setAttribute('aria-pressed',String(active));row.classList.toggle('selected',active);row.addEventListener('click',()=>chooseOutcome(item));
-  const name=el('span',undefined,'outcome-name');const swatch=el('span',undefined,'outcome-swatch');swatch.style.backgroundColor=color;swatch.setAttribute('aria-hidden','true');name.append(swatch,el('span',item.label));if(item.source)name.append(el('small',`(${item.source})`,'outcome-source'));
+  const name=el('span',undefined,'outcome-name');const swatch=el('span',undefined,'outcome-swatch');swatch.style.backgroundColor=color;swatch.setAttribute('aria-hidden','true');name.append(swatch,el('span',szsLabel(item.label)));if(item.source)name.append(el('small',`(${item.source})`,'outcome-source'));
   row.append(name,el('span',item.count.toLocaleString(),'outcome-count'),el('strong',`${percent.toFixed(1)}%`,'outcome-percent'));breakdown.append(row);
-  labels.push(`${item.label}${item.source?` (${item.source})`:''}: ${item.count} (${percent.toFixed(1)}%)`);
+  labels.push(`${szsLabel(item.label)}${item.source?` (${item.source})`:''}: ${item.count} (${percent.toFixed(1)}%)`);
  }
  chart.style.background=`conic-gradient(${segments.join(',')})`;
  chart.setAttribute('aria-label',`Solver-problem pair outcomes for ${total} solver-problem pairs. ${labels.join('; ')}`);
@@ -54,7 +57,7 @@ function renderOutcomes(outcomes){
  window.outcomeCubeData=items;window.renderOutcomeCube?.(items);
  updateOutcomeFilter();
 }
-function badge(state){const value=state.toLowerCase();let cls='';if(/error|fail|incomplete|interrupted|cancel|not run/.test(value))cls='bad';else if(/limit|timeout/.test(value))cls='limit';else if(/run|pending|submit|dispatch|completing/.test(value))cls='active';else if(/done|ok|completed|theorem|unsatisfiable|satisfiable|counter/.test(value))cls='good';return el('span',state,`badge ${cls}`);}
+function badge(state){const value=state.toLowerCase();const info=szsCatalog[state.split('(')[0]];if(info){const cls=info.category==='solver-error'?'bad':['time-limit','memory-limit','resource-limit'].includes(info.category)?'limit':info.ontology==='Success'?'good':'';return el('span',state,`badge ${cls}`);}let cls='';if(/error|fail|incomplete|interrupted|cancel|not run/.test(value))cls='bad';else if(/limit|timeout/.test(value))cls='limit';else if(/run|pending|submit|dispatch|completing/.test(value))cls='active';else if(/done|ok|completed|theorem|unsatisfiable|satisfiable|counter/.test(value))cls='good';return el('span',state,`badge ${cls}`);}
 function text(id, value){const node=$(id);if(node)node.textContent=value;}
 function button(label, action, cls='secondary'){const node=el('button',label,cls);node.type='button';node.addEventListener('click',action);return node;}
 function tableRow(cells){const tr=el('tr');for(const cell of cells){const td=el('td');td.append(cell instanceof Node?cell:document.createTextNode(cell??'—'));tr.append(td);}return tr;}
@@ -254,6 +257,7 @@ let jobStatusTooltip = null;
 function taskStatus(task){
  const status=badge(task.state||'Unknown');status.classList.add('task-status');status.tabIndex=0;
  const lines=[`Status: ${task.state||'Unknown'}`];
+ if(task.szs_code)lines.push(`SZS: ${task.szs_code} · ${task.szs_ontology}`);
  if(task.finished!==undefined)lines.push(task.finished?'Finished solver-problem pair.':'Not finished.');
  if(task.will_run)lines.push(`Will run: ${task.will_run}`);
  if(task.reason)lines.push(task.reason);
@@ -313,10 +317,10 @@ function jobStatusBar(job){
  let other=0;
  for(const segment of segments){
   if(!segment.count)continue;
-  const label=`${segment.label}${segment.source?` (${segment.source})`:''}: ${segment.count.toLocaleString()} solver-problem pairs (${(100*segment.count/total).toFixed(1)}%)`;
+  const label=`${typeof szsLabel==='function'?szsLabel(segment.label):segment.label}${segment.source?` (${segment.source})`:''}: ${segment.count.toLocaleString()} solver-problem pairs (${(100*segment.count/total).toFixed(1)}%)`;
   const part=el('span',undefined,'job-status-segment');part.tabIndex=0;
   part.style.width=`${100*segment.count/total}%`;
-  part.style.backgroundColor=outcomeColors[segment.label.toLowerCase()]||otherOutcomeColors[other++%otherOutcomeColors.length];
+  part.style.backgroundColor=outcomeColors[segment.label.toLowerCase()]||outcomeColors[segment.label.split('(')[0].toLowerCase()]||otherOutcomeColors[other++%otherOutcomeColors.length];
   if(segment.label==='Not finished')part.classList.add('unfinished');
   part.setAttribute('aria-label',label);
   const hide=()=>{if(jobStatusTooltip)jobStatusTooltip.hidden=true;};

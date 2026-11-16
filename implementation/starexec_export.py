@@ -15,16 +15,12 @@ import re
 import tarfile
 import tempfile
 import zipfile
+import szs
 
 FIELDS = ('benchmark', 'solver', 'configuration', 'status', 'cpu time', 'wallclock time',
           'memory usage', 'result', 'expected', 'SZSResult', 'SZSOutput', 'SZSStatus')
-STATUS = dict(theorem='THM', unsatisfiable='UNS', satisfiable='SAT', countersatisfiable='CSA',
-              contradictoryaxioms='CAX', finitelysatisfiable='FSA', finitelyunsatisfiable='FUN',
-              finitetheorem='FTH', equivalent='EQV', tautologousconclusion='TAC', timeout='TMO',
-              gaveup='GUP', error='ERR', unknown='UNK', inappropriate='IAP', memoryout='MMO',
-              resourceout='RSO', incomplete='INC')
-OUTPUT = dict(proof='Prf', refutation='Ref', cnfrefutation='CRf', model='Mod', finitemodel='FMo',
-              infinitemodel='IMo', saturation='Sat', assurance='Ass', none='Non', definitions='Ass')
+STATUS = {alias.casefold():code for name,code in szs.STATUSES.items() for alias in (name,code)}
+OUTPUT = {alias.casefold():code for name,code in szs.DATA_FORMS.items() for alias in (name,code)}
 PAIR_ID = re.compile(r'___([0-9]+)(?:\.stderr)?\.log$')
 TIMESTAMP = re.compile(rb'^\d+(?:\.\d+)?/\d+(?:\.\d+)?\t')
 
@@ -66,15 +62,16 @@ def number(value, multiplier=1):
 
 
 def summary_row(row, benchmark):
+    row = szs.normalize_row(row)
     complete = row.get('complete', '').lower() == 'true'
     result = row.get('szs_status') or '--'
     if not complete:
         state, mnemonic, output = 'incomplete', '-', '-'
     else:
-        state = {'time-limit': 'timeout (cpu)' if Decimal(number(row.get('cpu_seconds'))) >= Decimal(number(row.get('cpu_limit'))) > 0 else 'timeout (wallclock)',
+        state = {'time-limit': 'timeout (cpu)' if result=='CPUTimeout' else 'timeout (wallclock)' if result=='WCTimeout' else 'timeout (cpu)' if Decimal(number(row.get('cpu_seconds'))) >= Decimal(number(row.get('cpu_limit'))) > 0 else 'timeout (wallclock)',
                  'memory-limit': 'memout', 'solver-error': 'error', 'resource-limiter-error': 'error', 'worker-error': 'error', 'interrupted': 'incomplete'}.get(row.get('status'), 'complete')
-        mnemonic = STATUS.get(result.casefold(), 'UNK')
-        output = OUTPUT.get(row.get('szs_output', '').casefold(), 'Non')
+        mnemonic = szs.mnemonic(szs.base(result)) or szs.mnemonic({'time-limit':'Timeout', 'memory-limit':'MemoryOut', 'resource-limit':'ResourceOut', 'solver-error':'Error', 'resource-limiter-error':'Error'}.get(row.get('status'))) or 'UNK'
+        output = szs.data_mnemonic(row.get('szs_output')) or 'Non'
     solver = row.get('solver') or 'solver'
     return dict(zip(FIELDS, (benchmark, solver, solver, state,
                 number(row.get('cpu_seconds')), number(row.get('wall_seconds')),

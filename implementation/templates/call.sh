@@ -4,6 +4,7 @@ set -euo pipefail
 export LC_ALL=C
 export CALL_DIR="${CALLS_DIR:-$JOB_DIR/calls}/$1"
 source "$CALL_DIR/config.sh"
+source "$JOB_DIR/szs.sh"
 if [[ -n ${TPTP_ROOT_REL:-} ]]; then
     export TPTP="$JOB_DIR/rootfs/$TPTP_ROOT_REL"
 elif [[ -n ${TPTP_DEFAULT_ROOT:-} ]]; then
@@ -119,15 +120,18 @@ if [[ -f "$WATCHER_LOG" ]] && grep -Fq 'Maximum memory exceeded:' "$WATCHER_LOG"
     memory_out=true
 fi
 szs_status=
-szs_status=$(sed -nE 's/.*SZS[[:space:]]+status[[:space:]]+([A-Za-z][A-Za-z0-9_-]*).*/\1/p' \
+szs_status=$(sed -nE 's/.*SZS[[:space:]]+status[[:space:]]+([A-Za-z][A-Za-z0-9_-]*(\([[:space:]]*[A-Za-z]+[[:space:]]*,[[:space:]]*[A-Za-z]+[[:space:]]*\))?).*/\1/Ip' \
     "$SOLVER_LOG" "$SOLVER_STDERR_LOG" "$LIMITER_STDOUT_LOG" 2>/dev/null | tail -n 1 || true)
-szs_output=$(sed -nE 's/.*SZS[[:space:]]+output[[:space:]]+end[[:space:]]+([A-Za-z][A-Za-z0-9_-]*).*/\1/p' \
+szs_output=$(sed -nE 's/.*SZS[[:space:]]+output[[:space:]]+end[[:space:]]+([A-Za-z][A-Za-z0-9_-]*).*/\1/Ip' \
     "$SOLVER_LOG" "$SOLVER_STDERR_LOG" "$LIMITER_STDOUT_LOG" 2>/dev/null | tail -n 1 || true)
 # Solver-enforced limits can fire before the external limiter. Vampire's
 # non-portfolio mode reports a termination reason without an SZS status.
-case "${szs_status,,}" in
-    timeout) timed_out=true ;;
-    memoryout) memory_out=true ;;
+szs_status=$(szs_status_name "$szs_status")
+szs_output=$(szs_data_name "$szs_output")
+szs_kind=$(szs_execution "$szs_status")
+case "$szs_kind" in
+    time-limit) timed_out=true ;;
+    memory-limit) memory_out=true ;;
 esac
 if [[ -z "$szs_status" ]]; then
     if grep -Eq '(^|[[:space:]])%[[:space:]]+Termination reason:[[:space:]]+Time limit[[:space:]]*$' "$SOLVER_LOG" "$SOLVER_STDERR_LOG" 2>/dev/null; then
@@ -139,13 +143,10 @@ fi
 if (( interrupted )); then status=interrupted; complete=false
 elif [[ "$memory_out" == true ]]; then status=memory-limit
 elif [[ "$timed_out" == true ]]; then status=time-limit
-elif [[ "${szs_status,,}" == timeout ]]; then status=time-limit
 elif (( code == 124 || code == 137 )); then status=worker-error; complete=false
 elif (( limiter_code != 0 )) && [[ -z "$child" ]]; then status=resource-limiter-error
 elif (( code >= 128 )); then status=solver-error
-elif [[ "${szs_status,,}" == countersatisfiable ]]; then status=counter-satisfiable
-elif [[ "${szs_status,,}" =~ ^(error|oserror|inputerror|syntaxerror|semanticerror|typeerror|usageerror)$ ]]; then status=solver-error
-elif [[ -n "$szs_status" ]]; then status=ok
+elif [[ -n "$szs_kind" ]]; then status=$szs_kind
 elif (( code != 0 )); then status=solver-error
 fi
 archive="batch_${BATCH_ID}_${stem}_${SLURM_JOB_ID:-local}_$(date +%s).tar.gz"
