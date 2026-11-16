@@ -303,6 +303,7 @@ if(document.body.dataset.page==='new'){
  function solverArtifact(command,root){const executable=command.trim().match(/^(?:'([^']+)'|"([^"]+)"|(\S+))/)?.slice(1).find(Boolean)||'';if(!executable)throw new Error('Enter the solver command before configuring its build.');const path=executable.startsWith(root+'/')?executable.slice(root.length+1):executable.replace(/^\.\//,'');if(path.startsWith('/')||path==='..'||path.startsWith('../')||path.includes('/../')||path.includes('{{'))throw new Error('For a remote build, start the solver command with an executable relative to the solver root.');return path;}
  const batchInput=form.querySelector('[name="batch_size"]');
  let automaticBatch=!initial.batch_size,batchRequest=0,batchTimer=null,lastBatchSuggestion=null;
+ let acceptedBatchWarning=null,batchFitCheck=null;
  async function suggestBatchSize(){
   const request=++batchRequest, status=$('#batch-suggestion'), use=$('#use-batch-suggestion');
   status.className='validation';status.textContent='Checking partition nodes and counting solver-problem pairs…';use.hidden=true;
@@ -335,6 +336,24 @@ if(document.body.dataset.page==='new'){
    if(topology===coreTopologyState&&threads===threadChecks.get(input))return;
   }
  }
+ async function checkSubmissionFit(){
+  if(batchFitCheck)return batchFitCheck;
+  batchFitCheck=checkSubmissionFitNow();
+  try{return await batchFitCheck;}finally{batchFitCheck=null;}
+ }
+ async function checkSubmissionFitNow(){
+  const current=payload(), signature=JSON.stringify(current);
+  if(acceptedBatchWarning===signature)return;
+  const plan=await api('/api/suggest-batch-size',current);
+  if(signature!==JSON.stringify(payload()))return checkSubmissionFitNow();
+  if(plan.estimated_batches<=plan.submission_budget)return;
+  const recommendation=plan.recommended_batch_size;
+  const explanation=`This workflow creates approximately ${plan.estimated_batches} batches. Datalab permits at most 50 submitted SLURM tasks per user, including pending tasks and tasks outside Slurmy. Your outstanding-task setting is ${current.max_outstanding}.${plan.account_active_tasks!==null?` Your account currently has ${plan.account_active_tasks} active/pending tasks, leaving ${plan.account_free_slots} slots.`:''} Keep this computer awake and the local server running until the final batch is accepted; already submitted tasks continue if you disconnect. `+(recommendation?`Use ${recommendation} solver-problem pairs per batch to create ${plan.recommended_batches} ${plan.recommended_batches===1?'batch':'batches'}, fitting within the current submission window and below 50 given the currently available account slots. Other submissions can change availability.`:`${plan.submission_budget===0?'Your account currently has no free submission slots; even a single batch must wait. ':''}At least ${plan.minimum_batches} separate batches are required by the solver ordering and resource settings. Increasing batch size alone cannot fit them into the current ${plan.submission_budget}-task window. Adjust the ordering, configurations, or outstanding-task setting, or allow local submission to wait.`);
+  const choice=await SlurmyDialog.choose({title:'Some Batches Will Need to Wait',message:explanation,choices:[...(recommendation?[{value:'use',label:`Use Batch Size ${recommendation}`}]:[]),{value:'keep',label:'Keep Batch Size',secondary:true}]});
+  if(!choice)throw new Error('Review the batch size before continuing.');
+  if(choice==='use'){batchInput.value=recommendation;automaticBatch=false;updateStepStates();}
+  acceptedBatchWarning=JSON.stringify(payload());
+ }
  async function validSection(){
   if(step===1&&rootValue('mode')==='interactive'&&!$('#configurations .configuration'))throw new Error('Add a solver configuration or copy one from an existing workflow before continuing.');
   if(step===1&&rootValue('mode')==='interactive')await Promise.all([...document.querySelectorAll('.configuration')].map(waitForPlacement));
@@ -346,6 +365,7 @@ if(document.body.dataset.page==='new'){
   }
   if(step===1&&rootValue('mode')==='interactive'&&[...document.querySelectorAll('#configurations .configuration')].some(card=>card.dataset.state==='invalid'))throw new Error('Give each solver configuration a distinct name.');
   if(step===2){updateProblemStatus();const section=sections[step].querySelector('.problem-card-section[data-state="invalid"]');if(section){section.open=true;throw new Error('Complete the highlighted problem or axiom section before continuing.');}}
+  if(step===4||step===5)await checkSubmissionFit();
   if(step===3){updateLimiterStatus();const section=sections[step].querySelector('.limiter-card-section[data-state="invalid"]');if(section){section.open=true;throw new Error('Complete the highlighted limiter section before continuing.');}}
  }
  let navigating=false;
@@ -354,6 +374,7 @@ if(document.body.dataset.page==='new'){
   catch(error){if(error.cancelled)notice(error.message);else showError(error);}finally{finish();navigating=false;tabs.forEach(tab=>tab.disabled=false);$('#builder-next').disabled=false;}
  }
  document.querySelectorAll('#steps button').forEach((tab,index)=>tab.addEventListener('click',()=>navigate(index)));
+ batchInput.addEventListener('change',async()=>{if(step!==4||navigating||!batchInput.checkValidity())return;try{await checkSubmissionFit();}catch(error){showError(error);}});
  $('#builder-back').addEventListener('click',()=>{step--;renderStep();});
  $('#builder-next').addEventListener('click',()=>navigate(step+1));
  $('#builder-save').addEventListener('click',async()=>{const save=$('#builder-save');save.disabled=true;const finish=beginWork('Saving the complete workflow and solver-problem pair list…');try{await validSection();const current=payload();const endpoint=editing?'/api/workflows/update?stream=1&'+params({directory:context.dataset.directory}):'/api/workflows?stream=1';const data=await streamBuilder(endpoint,current,finish.update);location.href='/workflow?'+new URLSearchParams({host:current.host,directory:data.directory});}catch(error){if(error.cancelled)notice(error.message);else showError(error);save.disabled=false;}finally{finish();}});

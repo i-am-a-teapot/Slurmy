@@ -119,11 +119,12 @@ TOPOLOGY=$(sinfo -p "$PARTITION" -N -h -o '%X %Y %Z %m' | sort -u)
 }
 read -r SOCKETS CORES_PER_SOCKET THREADS_PER_CORE NODE_MEMORY <<< "$TOPOLOGY"
 [[ "$SOCKETS $CORES_PER_SOCKET $THREADS_PER_CORE" =~ ^[1-9][0-9]*\ [1-9][0-9]*\ [1-9][0-9]*$ ]] || exit 1
-csv_row batch_id concurrent_calls reserved_cores memory_mib wall_seconds exclusive_cpu exclusive_node > allocations.csv
 SUBMISSION_PHASE='planning and validating batch allocations'
 
 # Resolve automatic socket needs using the cluster's actual node topology.
 mkdir -p batches
+if [[ ! -f .batch-plans-ready ]] || ! grep -q '[0-9]' allocations.csv 2>/dev/null; then
+csv_row batch_id concurrent_calls reserved_cores memory_mib wall_seconds exclusive_cpu exclusive_node > allocations.csv
 next_batch=0
 for plan in plans/batch_*.sh; do
     unset TASK_THREADS_PER_CORE MAX_THREADS_PER_CORE
@@ -165,8 +166,8 @@ for plan in plans/batch_*.sh; do
         count=${#TASK_IDS[@]}
         parallel=1
         file=$(printf 'batches/batch_%06d.sh' "$next_batch")
-        wall=60
-        for ((i=first; i<first+count; i++)); do wall=$((wall + TASK_WALL[i] + 30)); done
+        # Preserve the generated wall budget, including optional host-info collection.
+        wall=$WALL_SECONDS
         {
             printf 'TASK_IDS=('; printf ' %q' "${TASK_IDS[@]:first:count}"; printf ' )\n'
             printf 'TASK_CORES=('; printf ' %q' "${TASK_CORES[@]:first:count}"; printf ' )\n'
@@ -199,6 +200,12 @@ for batch in batches/batch_*.sh; do
     }
     csv_row "$BATCH_ID" "$PARALLEL" "$((PARALLEL * SLOT_CORES))" "$MEMORY_MIB" "$WALL_SECONDS" "$EXCLUSIVE_CPU" "$EXCLUSIVE_NODE" >> allocations.csv
 done
+touch .batch-plans-ready
+else
+    next_batch=$(sed -n 's/.*"batch_count": *\([0-9][0-9]*\).*/\1/p' metadata.json | head -n 1)
+    [[ "$next_batch" =~ ^[0-9]+$ ]] || exit 1
+fi
+
 if [[ -f submission.csv ]]; then
     SUBMISSION_PHASE='reading previously accepted batches'
     prior_ids=$(python3 - <<'PY'

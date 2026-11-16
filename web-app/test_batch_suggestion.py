@@ -90,3 +90,35 @@ class BatchSuggestionTests(unittest.TestCase):
         self.assertEqual(first.json['hardware_parallelism'], 80)
         self.assertEqual(second.json['hardware_parallelism'], 8)
         self.assertEqual(nodes.call_count, 2)
+
+    def test_submission_fit_uses_real_grouping_instead_of_total_pairs_division(self):
+        configurations=[config(1,solver_name=name,command='./solver {{problem}}',wc_limit=1,cpu_limit=1,mem_limit='1GiB') for name in ['A','B']]
+        # ceil(2000/41)=49 is misleading: solver-major creates 25+25=50 batches.
+        plan=batch.submission_fit(configurations,[1000,1000],41,'solver-major',100,self.nodes)
+        self.assertEqual(plan['estimated_batches'],50)
+        self.assertEqual(plan['submission_budget'],49)
+        self.assertEqual(plan['recommended_batch_size'],42)
+        self.assertEqual(plan['recommended_batches'],48)
+        packed=batch.submission_fit(configurations,[1000,1000],41,'problem-major',100,self.nodes)
+        self.assertEqual(packed['estimated_batches'],49)
+
+    def test_submission_fit_respects_window_and_impossible_number_of_configurations(self):
+        configurations=[config(1,solver_name=str(index),command='./solver {{problem}}') for index in range(50)]
+        plan=batch.submission_fit(configurations,[1]*50,100,'solver-major',100,self.nodes)
+        self.assertEqual(plan['minimum_batches'],50)
+        self.assertIsNone(plan['recommended_batch_size'])
+        plan=batch.submission_fit([config(1)],[1000],1,'problem-major',32,self.nodes)
+        self.assertEqual(plan['recommended_batch_size'],32)
+        self.assertEqual(plan['recommended_batches'],32)
+
+    def test_dedicated_batches_still_pack_sequential_pairs(self):
+        plan=batch.submission_fit([config(1,exclusive_node='true')],[100],25,'solver-major',32,self.nodes)
+        self.assertEqual(plan['estimated_batches'],4)
+
+    def test_existing_account_tasks_reduce_available_slots_and_full_queue_has_no_immediate_fit(self):
+        plan=batch.submission_fit([config(1)],[1000],10,'problem-major',32,self.nodes,active_tasks=40)
+        self.assertEqual(plan['submission_budget'],10)
+        self.assertEqual(plan['recommended_batch_size'],100)
+        full=batch.submission_fit([config(1)],[1000],1000,'problem-major',32,self.nodes,active_tasks=50)
+        self.assertEqual(full['submission_budget'],0)
+        self.assertIsNone(full['recommended_batch_size'])

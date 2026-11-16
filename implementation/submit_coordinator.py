@@ -28,6 +28,15 @@ OBSERVATION_SECONDS = 300
 
 
 def command(argv: list[str], timeout: int = 20) -> subprocess.CompletedProcess[str]:
+    if os.environ.get('SLURMY_API_BRIDGE') == '1' and argv[0] in {'squeue', 'sacctmgr', 'sbatch'}:
+        payload = dict(argv=argv)
+        if argv[0] == 'sbatch':
+            payload.update(script=Path(argv[-1]).read_text(), cwd=str(Path.cwd()), environment=dict(os.environ))
+        with os.fdopen(os.dup(3), 'w') as stream:
+            stream.write('SLURMY_SCHEDULER_RPC '+json.dumps(payload)+'\n'); stream.flush()
+        with os.fdopen(os.dup(4), 'r') as stream:
+            response = json.loads(stream.readline())
+        return subprocess.CompletedProcess(argv, response['returncode'], response['stdout'], response['stderr'])
     return subprocess.run(argv, text=True, capture_output=True, timeout=timeout, check=False)
 
 
@@ -157,7 +166,7 @@ def main() -> int:
             capacity_record["checked"] = now
             save_json(capacity_file, capacity_record)
         observed = capacity_record.get("observed") if now - float(capacity_record.get("observed_at", 0)) < OBSERVATION_SECONDS else None
-        known = [value for value in (capacity_record.get("reported"), observed) if isinstance(value, int) and value > 0]
+        known = [value for value in (50, capacity_record.get("reported"), observed) if isinstance(value, int) and value > 0]
         ceiling = min(known) if known else None
         active_without_submitter = sum(count for name, count in own.items() if name not in demands)
         available = (ceiling - other - active_without_submitter) if ceiling is not None else sum(demands.values())

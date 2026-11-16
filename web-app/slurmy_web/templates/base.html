@@ -55,8 +55,18 @@
 </div>
 <main>
   <header class="topbar"><div class="topbar-title">{% block page_heading %}<h1>Slurmy</h1>{% endblock %}</div>
+    <button id="connection-toggle" class="secondary" type="button" popovertarget="connection-settings" title="Scheduler connection settings">Connection ▾</button>
     <form id="host-form"><label for="host">SSH host</label><input id="host" name="host" value="{{ host }}" required pattern="[A-Za-z0-9][A-Za-z0-9_.-]*"><button class="secondary">Connect</button></form>
   </header>
+  <div id="connection-settings" popover role="dialog" aria-labelledby="connection-title" class="connection-settings">
+    <div class="section-heading"><h2 id="connection-title">Cluster Connection</h2><button type="button" class="secondary" popovertarget="connection-settings" popovertargetaction="hide">Close</button></div>
+    <p class="muted">Settings for <strong id="connection-host"></strong>. File transfers, builds and historical accounting still use this SSH host.</p>
+    <label>Live Scheduler Operations<select id="connection-mode"><option value="ssh">SSH commands</option><option value="rest">SLURM REST API</option></select></label>
+    <div id="connection-api-fields"><label>API Server URL (Including Port)<input id="connection-url" type="url" placeholder="http://slurmapi.datalab.tuwien.ac.at:6820"></label><label>API Version<input id="connection-version" value="v0.0.40"></label></div>
+    <p class="muted">REST uses HTTP requests for live scheduler status, topology checks, batch submission and cancellation. Slurmy obtains a short-lived token through SSH and renews it when needed. Tokens stay in local server memory and are never sent to your browser. Datalab’s HTTP address requires your trusted cluster network/VPN.</p>
+    <p class="muted">Submission waits on this computer between short waves. Keep the local server running and the computer awake until all batches are accepted. Already submitted SLURM tasks continue if you disconnect.</p>
+    <p id="connection-status" role="status"></p><div class="tools"><button id="connection-save" type="button">Save Connection</button><button id="connection-test" class="secondary" type="button">Test Saved Connection</button></div>
+  </div>
   <div class="page">{% block content %}{% endblock %}</div>
   <section id="operation" class="operation" hidden aria-live="polite"><div class="section-heading"><h3 id="operation-title">Operation</h3><button id="dismiss-operation" class="secondary">Hide</button></div><pre id="operation-log"></pre></section>
   <div id="notice" role="status" hidden></div>

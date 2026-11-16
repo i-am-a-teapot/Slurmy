@@ -327,17 +327,29 @@ user and have mode 0700; otherwise connection sharing is disabled. No changes to
 `~/.ssh/config` are required. Multiple TPTP globs are resolved in one remote query,
 with fresh matches on each preparation.
 
-After local builds, uploads and the initial SLURM controller submission finish,
-the entire job can continue with your browser closed, local server stopped, or
-laptop switched off. Brief **Submission Controller** jobs run on the cluster to
-submit batches within the configured window. Each queues its continuation
-before exiting; SLURM starts it after a batch frees a slot. Controllers use the
-workflow's partition and reservation, one core and 256 MiB, and release their
-allocation while waiting so they do not block dedicated whole-node batches.
-They use separate SLURM submission slots, not solver-problem pair batch slots.
-No login-session daemon, persistent SSH, or administrator privileges are needed.
-Resume preserves completed results and installs the current controller for
-existing jobs.
+Submission is driven by your local server in short waves. Keep the computer awake,
+the local server running, and cluster access available until **all batches are
+accepted**. After that, submitted SLURM tasks run without your laptop. While waiting
+for queue capacity, no background process stays on the head node. Resume retains
+completed results and continues unfinished solver-problem pairs. Datalab permits
+at most 50 submitted tasks per user; the batch-size review warns when a workload
+cannot fit at once and suggests a larger batch size where possible. Other jobs
+using your account can reduce the available slots.
+
+Use **Connection ▾** beside the upper-right SSH host to select **SLURM REST API**
+and configure the server URL/port and API version. Datalab defaults to
+`http://slurmapi.datalab.tuwien.ac.at:6820` and `v0.0.40`. Slurmy bootstraps a
+short-lived token with `scontrol token` over SSH, keeps it in local server memory,
+and renews it as needed. REST handles live scheduler queries, resource checks,
+submissions and cancellations. Shared-filesystem preparation, file transfers,
+builds and historical accounting still use SSH. In REST mode the local submitter
+polls queue capacity over HTTP and opens an SSH preparation wave only when space
+is available; it does not silently fall back to SSH scheduler commands on an API
+failure. The HTTP endpoint requires the trusted cluster network or VPN.
+
+The previous compute-node controller implementation is retained in
+[`implementation/archived/`](implementation/archived/README.md) for review and is
+not launched by current submissions or Resume.
 
 Normal preparation streams per-pair scripts directly into batch bundles. Use
 `slurmy.py --materialize-calls` to also write individual scripts for inspection. Uploads contain one

@@ -2,6 +2,7 @@
 """Check requested hardware threads against a SLURM partition before preparing."""
 from __future__ import annotations
 from ssh_transport import connection_options
+import slurm_api
 
 import argparse
 import csv
@@ -15,6 +16,11 @@ def dedicated_core_topology(host, partition):
     for value in (host, partition):
         if not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_.-]*', value):
             raise ValueError('Invalid cluster host or partition.')
+    if slurm_api.enabled(host):
+        rows = {(n['sockets'], n['cores_per_socket']) for n in slurm_api.partition_nodes(host, partition)}
+        if len(rows) != 1:
+            raise ValueError('Choose a partition with homogeneous socket/core topology.')
+        return rows.pop()
     result = subprocess.run(['ssh', *connection_options(), '-T', '-o', 'BatchMode=yes',
                              '-o', 'ConnectTimeout=10', '--', host,
                              f"sinfo -p {partition} -N -h -o '%X %Y'"],
@@ -33,6 +39,14 @@ def dedicated_core_topology(host, partition):
 def check_requested(host: str, partition: str, maximum: int) -> int:
     if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]*", partition):
         raise ValueError("Invalid SLURM partition name.")
+    if slurm_api.enabled(host):
+        values = {n['threads_per_core'] for n in slurm_api.partition_nodes(host, partition)}
+        if len(values) != 1:
+            raise ValueError('Partition has mixed threads-per-core topology; choose a homogeneous partition.')
+        supported = values.pop()
+        if maximum > supported:
+            raise ValueError(f'Workflow requests {maximum} threads per core, but partition {partition} supports {supported}.')
+        return supported
     try:
         process = subprocess.run(
             ["ssh", *connection_options(), "-T", "-o", "BatchMode=yes", "-o", "ConnectTimeout=10", "--", host,
@@ -61,6 +75,11 @@ def check_cores(host: str, partition: str, requested: int) -> int:
     """Reject a solver-problem pair that cannot fit on any node in the selected partition."""
     if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]*", partition):
         raise ValueError("Invalid SLURM partition name.")
+    if slurm_api.enabled(host):
+        supported = max(n['sockets']*n['cores_per_socket'] for n in slurm_api.partition_nodes(host, partition))
+        if requested > supported:
+            raise ValueError(f'A solver requests {requested} physical cores, but partition {partition} supports at most {supported}.')
+        return supported
     try:
         process = subprocess.run(
             ["ssh", *connection_options(), "-T", "-o", "BatchMode=yes", "-o", "ConnectTimeout=10", "--", host,

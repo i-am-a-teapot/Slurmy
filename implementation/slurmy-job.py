@@ -4,6 +4,7 @@ from ssh_transport import connection_options
 
 import argparse
 import base64
+import json
 import os
 from pathlib import Path
 import re
@@ -38,18 +39,32 @@ def main():
     # Always finish stopping before resume or deletion, including lingering
     # allocations from an earlier Stop request or a concurrent submission.
     actions = ['resume'] if args.if_idle else ['stop'] + ([args.action] if args.action != 'stop' else [])
+    import local_dispatch
+    if not args.if_idle:
+        local_dispatch.stop(args.host, args.job_id)
+    elif local_dispatch.is_active(args.host, args.job_id):
+        print('Local submission is already active; keeping it.', flush=True)
+        return 0
     for action in actions:
         print({'stop': 'Stopping submission and cancelling running and queued SLURM tasks; completed results are kept…',
                'resume': 'Resuming unfinished solver-problem pairs; completed results are kept…',
                'delete': 'All tasks stopped. Deleting cluster job files…'}[action], flush=True)
         try:
+            if action == 'stop':
+                import slurm_api
+                if slurm_api.enabled(args.host):
+                    auth = slurm_api.credentials(args.host)
+                    directory = auth['home']+'/slurmy/jobs/'+args.job_id
+                    for item in slurm_api.active_jobs(args.host, max_age=0):
+                        if item.get('user_name') == auth['user'] and item.get('current_working_directory') == directory:
+                            slurm_api.request(args.host, 'job/'+slurm_api.job_id(item), 'DELETE')
+                    slurm_api._reads.clear()
             with (tempfile.TemporaryFile() if action == 'resume' else (templates / f'remote_{action}.sh').open('rb')) as stream:
                 if action == 'resume':
                     if args.if_idle:
                         stream.write((templates / 'remote_recover.sh').read_bytes())
                         stream.write(b'\n')
                     updates = {name: base64.b64encode(path.read_bytes()).decode('ascii') for name, path in (
-                        ('submission_controller.py', templates.with_name('submission_controller.py')),
                         ('submit_coordinator.py', templates.with_name('submit_coordinator.py')),
                         ('remote_submit.sh', templates/'remote_submit.sh'))}
                     stream.write(('set -euo pipefail\n'
@@ -71,8 +86,20 @@ def main():
                     try:
                         budget = [] if action == 'resume' else ['timeout', '--signal=TERM', '--kill-after=5', '120']
                         result = subprocess.run(['ssh', *connection_options(), '-T', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=10', '--',
-                                                 args.host, *budget, 'env', '-u', 'BASH_ENV', '-u', 'ENV', 'bash', '--noprofile', '--norc', '-s', '--', args.job_id], stdin=stream, check=False, timeout=None if action == 'resume' else 180)
+                                                 args.host, *budget, 'env', '-u', 'BASH_ENV', '-u', 'ENV', 'bash', '--noprofile', '--norc', '-s', '--', args.job_id], stdin=stream, check=False, timeout=None if action == 'resume' else 180,
+                                                 stdout=subprocess.PIPE if action == 'resume' else None,
+                                                 text=True)
                         code = result.returncode
+                        if action == 'resume':
+                            resume_args = None
+                            for line in (result.stdout or '').splitlines():
+                                if line.startswith('SLURMY_RESUME_ARGS '):
+                                    resume_args = json.loads(line[len('SLURMY_RESUME_ARGS '):])
+                                else:
+                                    print(line, flush=True)
+                            if code == 0 and resume_args:
+                                import local_dispatch
+                                code = local_dispatch.run(args.host, resume_args)
                     except subprocess.TimeoutExpired:
                         code = 255
                     if code == 0:
@@ -91,7 +118,7 @@ def main():
                     reason = 'Connection interrupted' if code != 75 else 'Deletion still in progress'
                     print(f'{reason}; retrying {action} ({attempt + 1}/{attempts})…', flush=True)
                     time.sleep(attempt)
-        except OSError as error:
+        except (OSError, RuntimeError) as error:
             print(f'Could not {action} job over SSH: {error}', file=sys.stderr)
             return 1
     if args.action == 'delete':

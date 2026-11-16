@@ -4,3 +4,5 @@
 .sidebar nav .nav-icon{width:18px;height:18px;flex:none}
 
 .computer-info-option>span{display:flex;align-items:center;gap:9px}.computer-info-option input{width:auto;flex:none;margin:0;accent-color:var(--green)}
+
+.connection-settings{width:min(580px,calc(100vw - 32px));margin:80px 20px auto auto;padding:24px;border:1px solid var(--line);border-radius:var(--radius,10px);background:var(--white);color:var(--ink);box-shadow:0 15px 50px #0003;max-height:calc(100vh - 110px);overflow:auto}.connection-settings h2{font-size:19px}.connection-settings p{line-height:1.6}.topbar{gap:12px}

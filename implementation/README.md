@@ -150,22 +150,38 @@ are reported without dispatching a batch. Once `sbatch` begins accepting
 batches, submission is checkpointed per batch rather than globally atomic:
 SLURM cannot roll back allocations already accepted before a connection loss.
 Inspect the reported job ID before attempting a retry.
-The submission controller is a SLURM batch job, not a login-session process.
-After uploads and its initial `sbatch` acceptance, neither the local server nor
-SSH needs to remain connected. `submission_controller.py` runs finite waves:
-it reserves a continuation job before filling the worker submission window,
-then makes that continuation depend on its own completion and a queued worker.
-It exits while waiting, freeing its core for dedicated whole-node workers.
-Controllers request one core, 256 MiB and a ten-minute limit in the workflow's
-partition/reservation. They yield before that limit, and count toward the
-cluster account's submission limit while remaining outside the worker window.
-At least three account submission slots are needed: the running controller,
-its queued continuation, and one worker. Controllers are named **Submission
-Controller** in Cluster Status and are excluded from solver ETA parallelism.
-Stop cancels queued continuations and workers by their shared working directory.
-Resume installs the current controller/coordinator on older jobs, retaining
-accepted batches and a persistent unfinished-batch worklist across waves.
-Its output is kept in `submission-controller.log` in the job directory.
+`local_dispatch.py` drives finite submission waves from the laptop. Each wave
+executes `remote_dispatch.sh` and `remote_submit.sh` in a connected SSH session,
+yields when the submission window fills, and exits; the local process waits
+between waves. No detached head-node submitter or compute-node controller is
+launched. Keep the local server running and the laptop awake until every batch
+has been accepted. Already submitted tasks continue after disconnecting. Resume
+upgrades the coordinator/remote submission helpers on older jobs and returns
+the saved context to the local driver; completed results and the unfinished-pair
+worklist are preserved.
+
+`slurm_api.py` provides the optional per-SSH-host REST connection, configured from
+**Connection ▾** in the app. Settings live in `~/.config/slurmy/connections.json`
+(mode 600); JWTs are held only in process memory. `SLURMY_CONNECTIONS_FILE` can
+select a separate settings file for testing. Token bootstrap uses one SSH request
+with `scontrol token lifespan=3600`; scheduler HTTP calls use the user name and
+JWT headers. Tokens renew on expiry or an authentication rejection. Mutations are
+never blindly replayed after transport failures and redirects are rejected.
+REST status and hardware queries run from the laptop; the existing cluster view
+still reads private solver progress over SSH when expanding a node. Historical
+accounting and job files also retain their SSH access.
+
+REST submission bridges scheduler requests from the short remote preparation
+wave to `local_dispatch.py` over framed messages. The account-wide filesystem
+lock stays held across the queue check and POST, preserving fairness between
+SSH and REST clients. Every generated resource/placement option is translated;
+unsupported options fail explicitly. Queue waits use HTTP locally without a held
+SSH session. The 50-task account cap, configured per-job window, and other jobs
+all constrain dispatch. Batch plans are reused across waves.
+
+The previous compute-node controller and detached launchers are retained under
+[`archived/`](archived/README.md) for reference, with regression coverage, but
+are not packaged into new submissions.
 Custom TPTP axioms are copied atomically by one Python process, with progress
 every 500 files, rather than spawning separate `mkdir` and `cp` processes for
 every axiom. Monitoring probes the controller's kernel lock on each refresh, including when
@@ -305,15 +321,11 @@ requires a new choice. Older `all` editor values become the available maximum;
 CSV/CLI definitions still accept `all` for backward compatibility. Numeric limits
 continue to restrict the solver when isolation allocates a larger socket or node.
 
-Submission controllers use `nohup setsid` with redirected streams: ignoring HUP
-alone does not detach the process group from SSH/session cleanup. Resume always
-uses the current launcher supplied by the client, including for older jobs with
-an obsolete `remote_dispatch.sh` in their uploaded bundle. This was verified on
-3 November 2026 against an account where a `nohup` probe did not survive closing
-SSH but a `setsid` probe did. Its failed 64-batch job had repeatedly terminated
-while preparing 2,438 custom axioms; resuming with the corrected launcher completed
-that preparation and submitted the first 32 batches. SLURM then queued those tasks
-for Priority, while the controller correctly waited at its 32-task limit.
+Current submission never uses `nohup`, `tmux` or a detached head-node process.
+Earlier probes of session cleanup are historical and do not establish that a
+login-session process will survive the cluster’s current logout policy. See the
+archived controller notes for the distinct compute-node approach.
+
 
 Generated workflow file headers offer Download and Replace actions. Replacement
 uses the workflow editor's validator and regenerates the definition and related

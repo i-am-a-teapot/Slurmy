@@ -47,7 +47,7 @@ if [[ -n ${SLURMY_RESUME_JOB_ID:-} ]]; then
     JOB_ID=$SLURMY_RESUME_JOB_ID
     [[ "$JOB_ID" =~ ^[A-Za-z0-9._-]+$ ]] || { echo 'Invalid SLURMY_RESUME_JOB_ID.' >&2; exit 1; }
     echo "Resuming accepted batches for $JOB_ID; no inputs are rebuilt or uploaded."
-    ssh "${SSH_OPTIONS[@]}" -- "$HOST" env -u BASH_ENV -u ENV bash --noprofile --norc -s -- "$JOB_ID" "$SLURMY_PARTITION" "$MAX_OUTSTANDING" "$JOB_PREFIX" "$JOB_NAME_B64" 0 "${SLURMY_RESERVATION:--}" "$AUTO_JOB_NAME" < "$ASSETS/remote_dispatch.sh"
+    "$SLURMY_PYTHON" "$ASSETS/local_dispatch.py" "$HOST" "$JOB_ID" "$SLURMY_PARTITION" "$MAX_OUTSTANDING" "$JOB_PREFIX" "$JOB_NAME_B64" 0 "${SLURMY_RESERVATION:--}" "$AUTO_JOB_NAME"
     exit $?
 fi
 
@@ -94,20 +94,9 @@ done
 if [[ "$upload_ok" != true ]]; then
     echo 'Upload failed; the incomplete staging directory was not published or submitted.' >&2; exit 1
 fi
-# 4. Calculate allocations using cluster topology, then submit each batch.
-echo 'Submission phase: Committing upload and submitting SLURM batches'
-# Commit and dispatch in the same authenticated channel. The subshell keeps an
-# idempotent upload acknowledgment's exit from skipping dispatch.
-if { printf 'set -euo pipefail\n(\n'; cat "$ASSETS/remote_finish_upload.sh"; printf '\n)\n'; cat "$ASSETS/remote_dispatch.sh"; } | \
-    ssh "${SSH_OPTIONS[@]}" -- "$HOST" env -u BASH_ENV -u ENV bash --noprofile --norc -s -- "$JOB_ID" "$SLURMY_PARTITION" "$MAX_OUTSTANDING" "$JOB_PREFIX" "$JOB_NAME_B64" 0 "${SLURMY_RESERVATION:--}" "$AUTO_JOB_NAME"; then
-    :
-else
-    code=$?
-    if (( code == 255 )); then
-        echo "Submission connection was interrupted. The cluster controller may still be running; inspect job $JOB_ID before retrying." >&2
-    else
-        echo "Cluster submission failed (exit $code). See Submission Diagnostic on job $JOB_ID for the controller output." >&2
-    fi
-    echo "To resume only unaccepted batches: SLURMY_RESUME_JOB_ID=$JOB_ID bash ./submit.sh" >&2
-    exit "$code"
+# 4. Commit the files, then drive finite submission waves from this computer.
+if ! ssh_stage remote_finish_upload.sh 'Committing upload'; then
+    echo "Could not confirm uploaded inputs for $JOB_ID. Retry or use Resume after reconnecting." >&2
+    exit 1
 fi
+"$SLURMY_PYTHON" "$ASSETS/local_dispatch.py" "$HOST" "$JOB_ID" "$SLURMY_PARTITION" "$MAX_OUTSTANDING" "$JOB_PREFIX" "$JOB_NAME_B64" 0 "${SLURMY_RESERVATION:--}" "$AUTO_JOB_NAME"

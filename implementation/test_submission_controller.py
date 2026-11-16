@@ -7,7 +7,7 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
-import submission_controller as controller
+from archived import submission_controller as controller
 import submit_coordinator
 
 ARGS = ['job', 'CPU-amd', '1', 'job', 'am9i', '0', 'reservation-1', '1']

@@ -1,6 +1,7 @@
 """Flask routes for the single-user, loopback-only web application."""
 from __future__ import annotations
 from ssh_transport import connection_options
+import slurm_api
 
 
 from dataclasses import asdict
@@ -452,7 +453,7 @@ def create_app():
         if request.method != 'GET' or app.config.get('SHUTTING_DOWN'):
             return
         with guard:
-            busy = {op['scope'] for op in operations.values() if op['state'] == 'running'}
+            busy = {scope for op in operations.values() if op['state'] == 'running' for scope in (op['scope'], op['operation_host']+':'+str(op.get('job_id', '')))}
         candidates = recovery_watch.observe(selected_host, getattr(value, 'jobs', []), busy)
         for job in candidates:
             try:
@@ -517,7 +518,7 @@ def create_app():
                 if value is None:
                     continue
                 with guard:
-                    busy={op['scope'] for op in operations.values() if op['state']=='running'}
+                    busy={scope for op in operations.values() if op['state']=='running' for scope in (op['scope'], op['operation_host']+':'+str(op.get('job_id', '')))}
                 candidates=recovery_watch.idle_candidates(selected_host,value,busy)
                 for job_id in candidates:
                     with app.test_request_context('/api/jobs',query_string={'host':selected_host}):
@@ -553,6 +554,31 @@ def create_app():
         session.setdefault('csrf', secrets.token_hex(32))
         return render_template(template, host=host(), csrf=session['csrf'],
                                tptp_version=TPTP_DEFAULT_VERSION, tptp_default_root=TPTP_DEFAULT_ROOT, **kwargs)
+
+    @app.get('/api/connection')
+    def connection_settings():
+        return jsonify(slurm_api.settings(host()))
+
+    @app.post('/api/connection')
+    def save_connection_settings():
+        with guard:
+            if any(op['state'] == 'running' for op in operations.values()):
+                raise ValueError('Wait for current operations to finish before changing the scheduler connection.')
+        value = slurm_api.save_settings(host(), request.get_json() or {})
+        with guard:
+            cluster_cache.clear()
+            cache.invalidate()
+        return jsonify(value)
+
+    @app.post('/api/connection/test')
+    def test_connection_settings():
+        if not slurm_api.enabled(host()):
+            result = subprocess.run(['ssh', *connection_options(), '-T', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=10', '--', host(), 'true'], capture_output=True, timeout=20)
+            if result.returncode:
+                raise ValueError('SSH connection test failed. Check the SSH host and VPN connection.')
+            return jsonify(message='SSH connected. Scheduler commands and file access use this host.')
+        jobs = slurm_api.request(host(), 'jobs/state')
+        return jsonify(message=f"SLURM API connected as {slurm_api.credentials(host())['user']}; {len(jobs.get('jobs', []))} tasks visible. Tokens stay in local server memory.")
 
     @app.get('/health')
     def health():
@@ -1305,6 +1331,8 @@ def create_app():
                  'prepare-submit': 'prepare and dispatch SLURM job',
                  'submit': 'dispatch prepared SLURM job'}[target]
         requested_name = display_name(data['name']) if target != 'prepare' and data.get('name', '').strip() else None
+        if target == 'submit' and not (path/'submit.sh.files/local_dispatch.py').is_file():
+            raise ValueError('Prepared submission files use an archived submitter. Use Prepare & dispatch job to refresh them.')
         if requested_name and target == 'submit' and (path / 'submit.sh').is_file() and \
                 'JOB_NAME_B64' not in (path / 'submit.sh').read_text(encoding='utf-8'):
             raise ValueError('Prepared submission files predate job naming. Use Prepare & dispatch job to refresh them.')

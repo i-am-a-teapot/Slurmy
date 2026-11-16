@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 from ssh_transport import connection_options
+import slurm_api
 
 
 import base64
@@ -1335,7 +1336,7 @@ class RemoteCollector:
         try:
             process = subprocess.run(
                 command,
-                input=REMOTE_SNAPSHOT_SCRIPT.encode(),
+                input=('squeue() { return 1; }\n' + REMOTE_SNAPSHOT_SCRIPT).encode() if slurm_api.enabled(self.host) else REMOTE_SNAPSHOT_SCRIPT.encode(),
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 timeout=budget + 10,
@@ -1354,7 +1355,15 @@ class RemoteCollector:
             payload=gzip.decompress(process.stdout)
         except (OSError,EOFError) as exc:
             raise RuntimeError('Incomplete compressed monitoring response; retry the refresh.') from exc
-        return parse_snapshot(self.host,payload)
+        if slurm_api.enabled(self.host):
+            queue = slurm_api.queue_text(self.host, fresh=True).encode()
+            payload = payload.replace(b'QUEUE_AVAILABLE\0false\0SQUEUE\0\0', b'QUEUE_AVAILABLE\0true\0SQUEUE\0'+queue+b'\0', 1)
+        value = parse_snapshot(self.host,payload)
+        import local_dispatch
+        for job in value.jobs:
+            if local_dispatch.is_active(self.host, job.job_id):
+                job.controller_state = 'active'
+        return value
 
     def fetch_activity(self, job_ids):
         ids=list(job_ids)
@@ -1364,7 +1373,7 @@ class RemoteCollector:
         try:
             result=subprocess.run(['ssh',*connection_options(),'-T','-o','BatchMode=yes',
                                    '-o',f'ConnectTimeout={max(1,int(self.timeout))}','--',self.host,command],
-                                  input=REMOTE_ACTIVITY_SCRIPT.encode(),capture_output=True,timeout=20)
+                                  input=(slurm_api.queue_script(self.host, activity=True) + REMOTE_ACTIVITY_SCRIPT).encode() if slurm_api.enabled(self.host) else REMOTE_ACTIVITY_SCRIPT.encode(),capture_output=True,timeout=20)
         except (OSError,subprocess.TimeoutExpired) as exc:
             raise RuntimeError(f'Could not check job activity: {exc}') from exc
         if result.returncode:
@@ -1381,6 +1390,10 @@ class RemoteCollector:
                 raise ValueError('Invalid activity records')
             if len(rows)!=len(ids) or {row['job_id'] for row in rows}!=set(ids):
                 raise ValueError('Incomplete activity response')
+            import local_dispatch
+            for row in rows:
+                if local_dispatch.is_active(self.host, row['job_id']):
+                    row['controller_state'] = 'active'
             return value
         except (ValueError,TypeError) as exc:
             raise RuntimeError('Invalid job activity response.') from exc

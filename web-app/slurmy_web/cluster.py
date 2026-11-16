@@ -249,6 +249,10 @@ def fetch_status(host, partition, timeout=12, node=None):
         raise ValueError('Invalid SLURM partition name.')
     if node is not None and not PARTITION_RE.fullmatch(node):
         raise ValueError('Invalid SLURM node name.')
+    import slurm_api
+    if slurm_api.enabled(host):
+        from .cluster_api import fetch_status as api_status
+        return api_status(host, partition, node)
     if shutil.which('ssh') is None:
         raise RuntimeError('ssh is not installed or not on PATH')
     command = ['ssh', *connection_options(), '-T', '-o', 'BatchMode=yes', '-o', f'ConnectTimeout={timeout}',

@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 from ssh_transport import connection_options
+import slurm_api
 
 
 import argparse
@@ -91,6 +92,16 @@ def run_remote(
 
 
 def active_jobs(host: str, timeout: float) -> list[ActiveJob]:
+    if slurm_api.enabled(host):
+        user = slurm_api.credentials(host)['user']
+        records = slurm_api.active_jobs(host, max_age=0)
+        grouped = {}
+        for item in records:
+            if item.get('user_name') != user: continue
+            identifier = str(slurm_api.number(item.get('array_job_id')) or item['job_id'])
+            record = grouped.setdefault(identifier, ActiveJob(job_id=identifier, name=item.get('name', '')))
+            record.states.update(item.get('job_state', [])); record.elements += 1; record.location = item.get('nodes') or ''
+        return sorted(grouped.values(), key=lambda j: int(j.job_id), reverse=True)
     process = run_remote(host, REMOTE_LIST, timeout=timeout)
     jobs: dict[str, ActiveJob] = {}
     for line in process.stdout.splitlines():
@@ -141,7 +152,14 @@ def cancel_job(host: str, job_id: str, timeout: float) -> None:
         raise CancelError(
             "invalid SLURM job ID; use a base ID such as 12345 or an element such as 12345_7"
         )
-    run_remote(host, REMOTE_CANCEL, job_id, timeout=timeout)
+    if slurm_api.enabled(host):
+        try:
+            slurm_api.request(host, 'job/'+job_id, 'DELETE')
+        except RuntimeError as exc:
+            raise CancelError(str(exc)) from exc
+        slurm_api._reads.clear()
+    else:
+        run_remote(host, REMOTE_CANCEL, job_id, timeout=timeout)
     print(f"Cancellation requested for SLURM job {job_id} on {host}.")
 
 

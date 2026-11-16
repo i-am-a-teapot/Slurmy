@@ -20,6 +20,7 @@ class DispatchProgressTests(unittest.TestCase):
         (self.workflow / 'Makefile').touch()
         self.metadata = self.workflow / 'submit.sh.files' / 'metadata.json'
         self.metadata.parent.mkdir()
+        (self.metadata.parent / 'local_dispatch.py').touch()
         self.metadata.write_text(json.dumps(dict(task_count=26990)))
         os.utime(self.metadata, (1, 1))
         for target, value in [('STATE', root / 'state'), ('workflows.USER_RUNS', root),
@@ -73,6 +74,13 @@ class DispatchProgressTests(unittest.TestCase):
         self.assertFalse(jobs[0]['provisional'])
         self.assertEqual(jobs[0]['total'], 2858)
         self.assertEqual(self.jobs(), jobs)
+
+    def test_archived_prepared_submitter_must_be_refreshed_before_dispatch(self):
+        (self.metadata.parent/'local_dispatch.py').unlink()
+        response=self.client.post('/api/workflow/action',query_string={'directory':str(self.workflow)},
+                                  json={'action':'submit'},headers={'X-CSRF-Token':'test'})
+        self.assertEqual(response.status_code,400)
+        self.assertIn('archived submitter',response.json['error'])
 
 
 if __name__ == '__main__':

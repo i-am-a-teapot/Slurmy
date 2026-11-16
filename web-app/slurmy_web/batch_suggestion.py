@@ -7,19 +7,36 @@ from slurmy import boolean, positive
 from . import workflows
 
 
+class Topology(list):
+    def __init__(self, values, active_tasks=None):
+        super().__init__(values)
+        self.active_tasks = active_tasks
+
+
 def partition_nodes(host, partition):
     host, partition = workflows.alias(host), workflows.alias(partition)
+    import slurm_api
+    if slurm_api.enabled(host):
+        user = slurm_api.credentials(host)['user']
+        active = sum(j.get('user_name') == user for j in slurm_api.submission_queue(host))
+        return Topology(slurm_api.partition_nodes(host, partition), active)
     try:
         result = subprocess.run(
             ['ssh', *connection_options(), '-T', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=10', '--', host,
-             f"sinfo -p {partition} -N -h -o '%N|%X|%Y|%Z'"],
+             f"set -o pipefail; sinfo -p {partition} -N -h -o '%N|%X|%Y|%Z' && "
+             "if count=$(squeue -h -r -u \"$USER\" -o '%i' | awk 'NF {n++} END {print n+0}'); then printf '@QUEUE|%s\\n' \"$count\"; fi"],
             text=True, capture_output=True, timeout=25, check=False)
     except (OSError, subprocess.TimeoutExpired) as exc:
         raise ValueError(f'Cannot inspect partition topology: {exc}') from exc
     if result.returncode:
         raise ValueError(result.stderr.strip() or 'Cannot inspect partition topology.')
     nodes = {}
+    active_tasks = None
     for line in result.stdout.splitlines():
+        if line.startswith('@QUEUE|'):
+            value = line.split('|', 1)[1]
+            if value.isdecimal(): active_tasks = int(value)
+            continue
         fields = line.strip().split('|')
         if len(fields) != 4 or any(not field.isdecimal() or int(field) < 1 for field in fields[1:]):
             raise ValueError('The cluster returned incomplete node topology.')
@@ -27,7 +44,7 @@ def partition_nodes(host, partition):
                                 threads_per_core=int(fields[3]))
     if not nodes:
         raise ValueError('No compute nodes found in the selected partition.')
-    return list(nodes.values())
+    return Topology(nodes.values(), active_tasks)
 
 
 def estimate(configurations, total_pairs, maximum_outstanding, nodes):
@@ -74,6 +91,7 @@ def suggest(data):
     if mode == 'jobpairs':
         configurations = workflows.imported_rows(workflows.existing(data.get('jobpairs')), check_paths=False)
         count = len(configurations)
+        group_counts = [1]*len(configurations)
     elif mode in {'interactive', 'configurations'}:
         configurations = (data.get('configurations') if mode == 'interactive' else
                           workflows.imported_rows(workflows.existing(data.get('configurations_file')), True, False))
@@ -84,6 +102,59 @@ def suggest(data):
             _, matches = workflows.problem_glob(value, materialize=False, host=host)
             problems.update(matches)
         count = len(configurations) * len(problems)
+        group_counts = [len(problems)]*len(configurations)
     else:
         raise ValueError('Choose how to define solver-problem pairs.')
-    return estimate(configurations, count, data.get('max_outstanding', 32), partition_nodes(host, partition))
+    nodes = partition_nodes(host, partition)
+    result = estimate(configurations, count, data.get('max_outstanding', 32), nodes)
+    result.update(submission_fit(configurations, group_counts, data.get('batch_size') or result['batch_size'],
+                                 data.get('pair_order') or 'solver-major', data.get('max_outstanding', 32), nodes,
+                                 getattr(nodes, 'active_tasks', None)))
+    return result
+
+
+def submission_fit(configurations, counts, batch_size, pair_order, maximum_outstanding, nodes, active_tasks=None):
+    """Count the same homogeneous batches the core planner creates."""
+    from collections import Counter
+    from pathlib import Path
+    import shlex
+    from slurmy import memory_bytes
+    groups = Counter()
+    for configuration, count in zip(configurations, counts):
+        core_text = str(configuration.get('cores') or '1')
+        dedicated_cpu = boolean(str(configuration.get('exclusive_cpu') or ''), 'dedicated CPU')
+        dedicated_node = boolean(str(configuration.get('exclusive_node') or ''), 'dedicated node')
+        if core_text.lower() == 'all':
+            topology = {(n['sockets'], n['cores_per_socket']) for n in nodes}
+            if len(topology) != 1: raise ValueError('All cores requires homogeneous socket/core topology.')
+            sockets, per_socket = topology.pop()
+            cores = per_socket*(sockets if dedicated_node else 1)
+        else: cores = positive(core_text, 'solver cores')
+        cpus = str(configuration.get('cpus') or 'auto')
+        allocation = (cores, int(configuration.get('threads_per_core') or 1),
+                      0 if cpus.lower() == 'auto' else int(cpus), dedicated_cpu, dedicated_node)
+        key = allocation
+        if pair_order == 'solver-major':
+            command = configuration.get('command') or ''
+            key += (configuration.get('solver_name') or (Path(shlex.split(command)[0]).name if command else ''),
+                    configuration.get('solver_directory', ''), command,
+                    int(configuration.get('wc_limit') or 1), int(configuration.get('cpu_limit') or 1),
+                    memory_bytes(str(configuration.get('mem_limit') or '1MiB')))
+        groups[key] += count
+    size = positive(str(batch_size), 'solver-problem pairs per batch')
+    free = max(0, 50-active_tasks) if active_tasks is not None else 50
+    budget = min(49, free, positive(str(maximum_outstanding), 'maximum outstanding SLURM tasks'))
+    def count_batches(size): return sum((count+size-1)//size for count in groups.values())
+    batches = count_batches(size)
+    recommendation = None
+    if len(groups) <= budget:
+        low, high = 1, max(groups.values(), default=1)
+        while low < high:
+            middle = (low+high)//2
+            if count_batches(middle) <= budget: high = middle
+            else: low = middle+1
+        recommendation = low
+    return dict(estimated_batches=batches, submission_budget=budget, account_submit_limit=50,
+                minimum_batches=len(groups), account_active_tasks=active_tasks, account_free_slots=free,
+                recommended_batch_size=recommendation,
+                recommended_batches=count_batches(recommendation) if recommendation else None)

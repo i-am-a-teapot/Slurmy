@@ -603,3 +603,23 @@ $('#workflow-file-replacement')?.addEventListener('change',async event=>{
  }catch(error){status.className='validation invalid';status.textContent=error.message;}
  finally{controls.forEach(control=>control.disabled=false);lockWorkflowActions(false);event.target.value='';}
 });
+
+// Per-SSH-host scheduler transport; credentials never leave the local server.
+const connectionPanel=$('#connection-settings');
+connectionPanel?.addEventListener('toggle',async event=>{
+ if(event.newState!=='open')return;
+ text('#connection-host',$('#host').value);text('#connection-status','Loading settings…');
+ try{const value=await api('/api/connection?'+params({host:$('#host').value}));$('#connection-mode').value=value.mode;$('#connection-url').value=value.url;$('#connection-version').value=value.version;connectionFields();text('#connection-status','');}catch(error){text('#connection-status',error.message);}
+});
+function connectionFields(){$('#connection-api-fields').hidden=$('#connection-mode').value!=='rest';}
+$('#connection-mode')?.addEventListener('change',connectionFields);
+$('#connection-save')?.addEventListener('click',async()=>{
+ const button=$('#connection-save');button.disabled=true;
+ try{await api('/api/connection?'+params({host:$('#host').value}),{mode:$('#connection-mode').value,url:$('#connection-url').value,version:$('#connection-version').value});text('#connection-status','Saved. New requests use this connection.');}
+ catch(error){text('#connection-status',error.message);}finally{button.disabled=false;}
+});
+$('#connection-test')?.addEventListener('click',async()=>{
+ const button=$('#connection-test');button.disabled=true;text('#connection-status','Testing saved connection…');
+ try{const value=await api('/api/connection/test?'+params({host:$('#host').value}),{});text('#connection-status',value.message);}
+ catch(error){text('#connection-status',error.message);}finally{button.disabled=false;}
+});
