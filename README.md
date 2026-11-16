@@ -344,7 +344,7 @@ Normal preparation streams per-pair scripts directly into batch bundles. Use
 compressed script bundle per batch, rather than thousands of small script files.
 Each compute node unpacks its batch into node-local temporary storage, removed at
 batch exit. Upload commit and SLURM dispatch share one SSH channel. Prebuilt-only
-jobs perform no cluster builds, and `/share/TPTP` problems are never uploaded.
+jobs perform no cluster builds, and `/share/datasets/TPTP` problems are never uploaded.
 SLURM queue waits, solver runtime and genuinely large resource transfers still
 contribute to time to first result.
 

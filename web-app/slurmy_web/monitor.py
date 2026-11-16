@@ -1412,7 +1412,10 @@ if [[ -f "$log" && ! -L "$log" ]]; then tail -c 262144 -- "$log"; fi
             raise ValueError('Invalid problem path.')
         script = r'''set -euo pipefail
 root=$(realpath -e -- "$HOME/slurmy/jobs/$1/rootfs")
-if [[ "$2" == share/TPTP/*/Problems/* ]]; then
+if [[ "$2" == share/datasets/TPTP/*/Problems/* ]]; then
+    root=$(realpath -e -- /share/datasets/TPTP)
+    file=$(realpath -e -- "/$2")
+elif [[ "$2" == share/TPTP/*/Problems/* ]]; then
     root=$(realpath -e -- /share/TPTP)
     file=$(realpath -e -- "/$2")
 elif [[ "$2" == share/Slurmy-TPTP-v9.2.1/Problems/* ]]; then

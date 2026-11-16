@@ -46,9 +46,9 @@ configuration × problem product into `jobpairs.csv`. Optional
 form are saved as `build-resource-*.sh`. The solver source and problem files
 can remain at their existing paths; they are packaged at submission time.
 Problems can be selected by files, globs, ZIP/tar archives, or a cluster TPTP
-pattern such as `tptp://TPTP-v9.2.1/Problems/*/*.p` (all domains) or
-`tptp://TPTP-v9.2.1/Problems/AGT/*.p` (one domain). Cluster TPTP problems remain under the
-shared `/share/TPTP/TPTP-v9.2.1/Problems/` tree. If custom axioms
+pattern such as `tptp://TPTP-v10.0.0/Problems/*/*.p` (all domains) or
+`tptp://TPTP-v10.0.0/Problems/AGT/*.p` (one domain). Cluster TPTP problems remain under the
+shared `/share/datasets/TPTP/TPTP-v10.0.0/Problems/` tree. If custom axioms
 are selected, they replace the default shared TPTP library for that job.
 
 The three core inputs are `jobpairs.csv`, `building.txt`, and
@@ -158,12 +158,23 @@ and retained when a stopped job resumes. CLI workflows can set
 `SLURMY_RESERVATION := E192-04` in their Makefile; leave it empty for normal scheduling.
 
 To use only shared problems, add a cluster TPTP source without adding a local
-source. **Browse cluster TPTP…** lists `/share/TPTP/` on the selected SSH host.
-Open a version and its `Problems/` directory, then choose a file or select a
+source. **Browse cluster TPTP…** opens the default version’s `Problems/` directory
+under `/share/datasets/TPTP/` on the selected SSH host. Navigate up to choose
+another version, then choose a file or select a
 directory to form an editable recursive `/**/*.p` glob. For example,
-`tptp://TPTP-v9.2.1/Problems/AGT/*.p` resolves to
-`/share/TPTP/TPTP-v9.2.1/Problems/AGT/*.p`. A shared problem uses its version's
+`tptp://TPTP-v10.0.0/Problems/AGT/*.p` resolves to
+`/share/datasets/TPTP/TPTP-v10.0.0/Problems/AGT/*.p`. A shared problem uses its version's
 axiom library unless custom axioms or `SLURMY_TPTP_ROOT` override it.
+TPTP 10.0.0 is the default for new selections and unversioned globs. Explicit
+version selections remain pinned. Older `/share/TPTP/` job paths still resolve
+through a compatibility link; version directories under the new root are real
+directories.
+
+The **Record Computer Information Before Each Solver-Problem Pair** setting in
+the resource-limiter step is enabled by default. It adds compute-node hardware,
+OS and configured limits to solver stdout before the solver’s output. Timestamps
+follow the limiter’s `--timestamp` option. This setting is retained when editing,
+duplicating, downloading or uploading a workflow.
 
 ## Portable workflow downloads
 

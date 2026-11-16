@@ -26,7 +26,7 @@ to that file; the web app normally saves absolute paths.
 | `solver_name` | Optional display label for this solver configuration. |
 | `command` | Solver shell command; may use the placeholders below. |
 | `solver_directory` | Local runtime directory, copied to the cluster and used as the command's working directory. |
-| `problem` | Local problem file, or `tptp:/share/TPTP/TPTP-v9.2.1/Problems/...` for a shared cluster problem. |
+| `problem` | Local problem file, or `tptp:/share/datasets/TPTP/TPTP-v10.0.0/Problems/...` for a shared cluster problem. |
 | `wc_limit`, `cpu_limit` | Positive wall-clock and total CPU limits in seconds. |
 | `mem_limit` | Positive memory limit, e.g. `500MB`, `2GiB`; a bare number means MB. |
 | `cores` | Maximum physical cores for the call. |
@@ -83,6 +83,16 @@ measurement variables, and captured solver output. The runner does not add
 these flags behind your back. The template can also use solver placeholders.
 The job inspector shows the exact rendered invocation and distinguishes empty
 output from a file omitted by the limiter configuration.
+
+By default, the bundled `tools/GetComputerInfo` runs on the compute node before
+every solver-problem pair. Its hardware, operating-system and configured-limit
+report appears at the start of solver stdout as TPTP comments. Report lines use
+`0.00/0.00` timestamps only when the limiter invocation contains `--timestamp`.
+Collection runs outside solver timing and limits, with a 45-second timeout;
+failure is recorded in the controller log and does not prevent the solver from
+running. The SLURM wall-time budget includes this extra allowance. Disable it
+with `GET_COMPUTER_INFO := false` in the workflow Makefile or
+`--no-computer-info` when preparing directly with `slurmy.py`.
 
 </blockquote>
 </details>

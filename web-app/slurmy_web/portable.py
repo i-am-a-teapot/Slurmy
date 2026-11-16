@@ -20,6 +20,7 @@ import time
 
 from slurmy import order_jobpairs, path_at, read_pairs, read_builds, read_axioms
 from . import workflows
+from slurmy_archives import tptp_collection_root, TPTP_DEFAULT_ROOT
 
 FORMAT = 'slurmy-workflow-v1'
 MAX_EXPANDED = 30 * 1024**3
@@ -110,19 +111,17 @@ def export_bundle(directory, host):
                 local_includes.extend(re.findall(r'''\binclude\s*\(\s*['"]([^'"]+)['"]''', text))
     remote_roots = set()
     for problem in remote:
-        if problem.startswith('/share/TPTP/'):
-            remote_roots.add(str(Path('/').joinpath(*Path(problem).parts[1:4])))
-        elif problem.startswith('/share/Slurmy-TPTP-v9.2.1/'):
-            remote_roots.add('/share/Slurmy-TPTP-v9.2.1')
-        else:
+        root = tptp_collection_root(problem)
+        if not root:
             raise ValueError('Unsupported shared problem path.')
+        remote_roots.add(root)
     shared_roots = remote_roots if not axioms else set()
     payload = dict(format=FORMAT, name=directory.name, rows=rows, editor_mode=data['mode'], pair_order=data.get('pair_order') or 'solver-major',
                    builds=[{k: str(v) if isinstance(v, Path) else v for k, v in asdict(build).items()} for build in builds],
-                   limiter=limiter, axioms=axioms, shared_roots=sorted(shared_roots),
+                   limiter=limiter, axioms=axioms, shared_roots=sorted(shared_roots), default_tptp_root=TPTP_DEFAULT_ROOT,
                    settings={key: data.get(key, default) for key, default in
                              [('host', host), ('partition', 'CPU-amd'), ('reservation', ''),
-                              ('batch_size', 1), ('max_outstanding', 32)]})
+                              ('batch_size', 1), ('max_outstanding', 32), ('get_computer_info', True)]})
     payload['settings']['host'] = host
     output = tempfile.TemporaryFile()
     try:
@@ -130,7 +129,8 @@ def export_bundle(directory, host):
             remote_archive = Path(tmp) / 'shared.tar'
             # Only selected problems and their version's axiom library are read remotely.
             request = base64.b64encode(json.dumps(dict(problems=sorted(remote), roots=sorted(remote_roots),
-                                                       local_includes=local_includes, include_shared=not bool(axioms))).encode()).decode()
+                                                       local_includes=local_includes, include_shared=not bool(axioms),
+                                                       default_root=TPTP_DEFAULT_ROOT)).encode()).decode()
             script = r'''import base64,json,os,re,sys,tarfile
 spec=json.loads(base64.b64decode(sys.argv[1]))
 roots=spec['roots']
@@ -139,14 +139,14 @@ def root_for(path):
   if path.startswith(root+'/'): return root
  raise SystemExit('Invalid shared problem path')
 queue=[(path,root_for(path)) for path in spec['problems']]
-default='/share/TPTP/TPTP-v9.2.1'
+default=spec['default_root']
 for include in spec['local_includes']:
  queue.append((os.path.join(default,include),default))
 roots=set(roots)|({default} if spec['local_includes'] else set())
 seen=set()
 with tarfile.open(fileobj=sys.stdout.buffer,mode='w|',dereference=True) as archive:
  for root in sorted(roots) if spec['include_shared'] else []:
-  if not (root.startswith('/share/TPTP/') or root=='/share/Slurmy-TPTP-v9.2.1') or '..' in root.split('/'):
+  if not (root.startswith(('/share/datasets/TPTP/','/share/TPTP/')) or root=='/share/Slurmy-TPTP-v9.2.1') or '..' in root.split('/'):
    raise SystemExit('Invalid shared root')
   directory=tarfile.TarInfo('assets/'+root.lstrip('/')+'/Axioms/');directory.type=tarfile.DIRTYPE;directory.mode=0o755
   archive.addfile(directory)
@@ -260,9 +260,13 @@ def import_bundle(stream, name):
         for root in shared_roots:
             mapping[root] = str(destination / 'assets' / root.lstrip('/'))
             local(root + '/Axioms')
-        default_axioms = staging / 'assets/share/TPTP/TPTP-v9.2.1/Axioms'
+        default_root = payload.get('default_tptp_root', '/share/TPTP/TPTP-v9.2.1')
+        if not isinstance(default_root, str) or tptp_collection_root(default_root + '/Problems/example.p') != default_root:
+            raise ValueError('Invalid default TPTP root in workflow archive.')
+        default_relative = Path('assets') / default_root.lstrip('/')
+        default_axioms = staging / default_relative / 'Axioms'
         if default_axioms.is_dir():
-            mapping['/share/TPTP/TPTP-v9.2.1'] = str(destination / 'assets/share/TPTP/TPTP-v9.2.1')
+            mapping[default_root] = str(destination / default_relative)
         normalized = []
         for row in rows:
             row = dict(row)
@@ -304,10 +308,13 @@ def import_bundle(stream, name):
             # Use exact paths so an absent suffix is not treated as a failed glob.
             axiom_lines = [str(destination / file.relative_to(staging)) for file in (staging/'portable-tptp/Axioms').rglob('*') if file.is_file()]
         elif default_axioms.is_dir() and not shared_roots:
-            axiom_lines = [str(destination / 'assets/share/TPTP/TPTP-v9.2.1/Axioms/**/*')]
+            axiom_lines = [str(destination / default_relative / 'Axioms/**/*')]
         settings = payload['settings']
         host = workflows.alias(settings.get('host') or 'datalab'); partition = workflows.alias(settings.get('partition') or 'CPU-amd')
         reservation = workflows.alias(settings['reservation']) if settings.get('reservation') else ''
+        computer_info = settings.get('get_computer_info', True)
+        if not isinstance(computer_info, bool):
+            raise ValueError('Invalid computer information setting in workflow archive.')
         batch = workflows.positive(str(settings.get('batch_size', 1)), 'batch size')
         maximum = workflows.positive(str(settings.get('max_outstanding', 32)), 'outstanding tasks')
         pair_order = payload.get('pair_order') or 'solver-major'
@@ -329,12 +336,12 @@ def import_bundle(stream, name):
         check_pairs.unlink();check_builds.unlink()
 
         repo = os.path.relpath(workflows.REPO, destination)
-        makefile = f'REPO_ROOT := {repo}\nBATCH_SIZE := {batch}\nPAIR_ORDER := {pair_order}\nSLURMY_MAX_OUTSTANDING := {maximum}\nSLURMY_HOST := {host}\nSLURMY_PARTITION := {partition}\nSLURMY_RESERVATION := {reservation}\n'
+        makefile = f'REPO_ROOT := {repo}\nBATCH_SIZE := {batch}\nPAIR_ORDER := {pair_order}\nGET_COMPUTER_INFO := {str(computer_info).lower()}\nSLURMY_MAX_OUTSTANDING := {maximum}\nSLURMY_HOST := {host}\nSLURMY_PARTITION := {partition}\nSLURMY_RESERVATION := {reservation}\n'
         if axiom_lines:
             (staging/'axiom-globs.txt').write_text('\n'.join(axiom_lines)+'\n');makefile += 'AXIOMS := axiom-globs.txt\n'
         makefile += 'include $(REPO_ROOT)/implementation/templates/workflow.mk\n'
         (staging/'Makefile').write_text(makefile)
-        data = dict(name=name, host=host, partition=partition, reservation=reservation, batch_size=batch, max_outstanding=maximum, pair_order=pair_order,
+        data = dict(get_computer_info=computer_info, name=name, host=host, partition=partition, reservation=reservation, batch_size=batch, max_outstanding=maximum, pair_order=pair_order,
                     mode='jobpairs', jobpairs=str(destination/'jobpairs.csv'), building_mode='existing', building_file=str(destination/'building.txt'),
                     limiter_mode='inline', limiter=limiter, axiom_mode='custom' if axiom_lines else 'cluster', axiom_globs=axiom_lines, _created_at=time.time())
         if payload.get('editor_mode') in {'interactive', 'configurations'} and len(shared_roots) <= 1:

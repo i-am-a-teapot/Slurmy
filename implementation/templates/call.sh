@@ -41,10 +41,30 @@ stop() { interrupted=1; [[ -z "$active" ]] || kill -TERM -- "-$active" 2>/dev/nu
 trap stop TERM INT
 trap 'rm -rf -- "$work"' EXIT
 cd "$JOB_DIR/rootfs/$SOLVER_ROOT_REL"
+# Collect host information outside the solver's measured time and limits.
+# Runsolver truncates solver-data, so prepend this report after it finishes.
+if [[ ${GET_COMPUTER_INFO:-0} == 1 ]]; then
+    info_args=(-p --prefix '% ' --cpu-limit "$CPU_LIMIT" --wc-limit "$WC_LIMIT" --mem-limit "${MEM_LIMIT_MIB}MiB")
+    [[ ${COMPUTER_INFO_TIMESTAMP:-0} != 1 ]] || info_args+=(--timestamp)
+    setsid timeout --signal=TERM --kill-after=5 45 bash "$JOB_DIR/GetComputerInfo" \
+        "${info_args[@]}" THIS ALL > "$work/computer-info.header" 2>> "$CONTROLLER_LOG" &
+    active=$!
+    info_code=0
+    wait "$active" || info_code=$?
+    if (( interrupted )); then
+        kill -KILL -- "-$active" 2>/dev/null || true
+        wait "$active" 2>/dev/null || true
+    elif (( info_code != 0 )); then
+        printf 'Warning: GetComputerInfo exited with status %s; continuing with the solver.\n' "$info_code" >> "$CONTROLLER_LOG"
+    fi
+    active=
+fi
 # A session lets cancellation terminate the full limiter/solver process group.
 # The outer timeout catches a broken limiter while allowing its cleanup buffer.
+code=143
+if (( ! interrupted )); then
 setsid timeout --signal=TERM --kill-after=5 "$((WC_LIMIT + 25))" \
-    bash "$JOB_DIR/timed_call.sh" > "$LIMITER_STDOUT_LOG" 2> "$CONTROLLER_LOG" &
+    bash "$JOB_DIR/timed_call.sh" > "$LIMITER_STDOUT_LOG" 2>> "$CONTROLLER_LOG" &
 active=$!
 set +e
 wait "$active"
@@ -55,6 +75,12 @@ if (( interrupted )); then
 fi
 set -e
 active=
+fi
+if [[ -f "$work/computer-info.header" ]]; then
+    { cat "$work/computer-info.header"; [[ ! -f "$SOLVER_LOG" ]] || cat "$SOLVER_LOG"; } > "$work/solver-with-info"
+    mv "$work/solver-with-info" "$SOLVER_LOG"
+    rm "$work/computer-info.header"
+fi
 wall=$(( $(date +%s) - started )); user=; system=; memory=; cpu=; max_vm=; cpu_usage=
 if [[ -f "$work/time" ]]; then
     timing=$(tail -n 1 "$work/time")

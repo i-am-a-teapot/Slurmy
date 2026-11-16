@@ -93,6 +93,9 @@ def imported_rows(filename, configurations=False, check_paths=True):
 
 def specification(data, destination_override=None, progress=None):
     data = dict(data)
+    if not isinstance(data.get('get_computer_info', True), bool):
+        raise ValueError('Computer information setting must be true or false.')
+    data.setdefault('get_computer_info', True)
     data['resources'] = [{**entry, 'role': 'solver' if entry.get('role') == 'prover' else entry.get('role')}
                          for entry in data.get('resources', [])]
     name = data.get('name', '')
@@ -259,11 +262,12 @@ def specification(data, destination_override=None, progress=None):
             progress('phase', 'Checking solver-problem pairs and generating submission scripts', 0, 0)
         generate(staging / 'jobpairs.csv', staging / 'building.txt', staging / 'resource_limiter_template.txt',
                  staging / 'axiom-globs.txt' if axiom_patterns else None, batch_size, progress=progress,
-                 max_outstanding=max_outstanding, pair_order=pair_order,materialize_calls=False,host=host,partition=partition)
+                 max_outstanding=max_outstanding, pair_order=pair_order,materialize_calls=False,host=host,partition=partition,
+                 get_computer_info=data['get_computer_info'])
     if progress:
         progress('phase', 'Preparing workflow preview', 0, 0)
     files['Makefile'] = (f'REPO_ROOT := ../../..\nBATCH_SIZE := {batch_size}\nSLURMY_MAX_OUTSTANDING := {max_outstanding}\n'
-                         + f'PAIR_ORDER := {pair_order}\n' +
+                         + f'PAIR_ORDER := {pair_order}\nGET_COMPUTER_INFO := {str(data["get_computer_info"]).lower()}\n' +
                          f'SLURMY_HOST := {host}\n'
                          f'SLURMY_PARTITION := {partition}\nSLURMY_RESERVATION := {reservation}\ninclude $(REPO_ROOT)/implementation/templates/workflow.mk\n')
     if axiom_patterns:
@@ -676,6 +680,7 @@ def decisions(directory, check_paths=True):
                 partition=setting('SLURMY_PARTITION', 'CPU-amd'), batch_size=setting('BATCH_SIZE', '1'),
                 max_outstanding=setting('SLURMY_MAX_OUTSTANDING', '32'),
                 pair_order=setting('PAIR_ORDER', 'solver-major'),
+                get_computer_info=setting('GET_COMPUTER_INFO', 'true').lower() not in {'false', '0', 'no'},
                 mode=mode, jobpairs=jobpairs, configurations_file='', configurations=configs,
                 globs=globs, axiom_globs=axiom_globs, axiom_mode='custom' if axiom_globs else 'cluster', building_mode='create', building_file='', resources=resources,
                 limiter_mode='inline', limiter_file='', limiter=limiter))

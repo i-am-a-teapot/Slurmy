@@ -72,7 +72,7 @@ and downloaded binaries. In the four solver examples, `make pairs-clean`
 also removes the generated `jobpairs.csv`, so edits to configurations or problem
 selection can be expanded again.
 
-Shared collection paths use `tptp://TPTP-v9.2.1/Problems/...` and resolve under
-`/share/TPTP/` on the cluster. The other solver examples intentionally retain
+Shared collection paths use `tptp://TPTP-v10.0.0/Problems/...` and resolve under
+`/share/datasets/TPTP/` on the cluster. The other solver examples intentionally retain
 their bundled local problem selections. Optional `SLURMY_RESERVATION` applies
 to solver and build submissions alike.

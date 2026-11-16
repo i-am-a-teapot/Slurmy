@@ -5,18 +5,26 @@ from pathlib import Path
 import shutil
 import subprocess
 import tempfile
+import tarfile
 import unittest
 
 TEMPLATES=Path(__file__).parent/'templates'
 
 
 class SolverLimitTests(unittest.TestCase):
-    def run_pair(self, output, expected, code=1, stderr=False):
+    def run_pair(self, output, expected, code=1, stderr=False, computer_info=False, timestamp=False, info_exit=0):
         with tempfile.TemporaryDirectory() as folder:
             root=Path(folder)
             for name in ['calls/0','rootfs/runtime','results/index','progress']:(root/name).mkdir(parents=True)
             shutil.copy2(TEMPLATES/'csv.sh',root/'csv.sh')
             (root/'calls/0/config.sh').write_text('TASK_ID=0\nTASK_KEY=abcdef\nCORES=1\nTHREADS_PER_CORE=1\nWC_LIMIT=3\nSOLVER_ROOT_REL=runtime\n')
+            with (root/'calls/0/config.sh').open('a') as config:
+                config.write(f'GET_COMPUTER_INFO={int(computer_info)}\nCOMPUTER_INFO_TIMESTAMP={int(timestamp)}\nCPU_LIMIT=2\nMEM_LIMIT_MIB=100\n')
+            (root/'GetComputerInfo').write_text('''#!/bin/bash
+printf '%s\\n' "$@" > "$JOB_DIR/info-arguments"
+if [[ " $* " == *' --timestamp '* ]]; then printf '0.00/0.00\\t'; fi
+printf '%% Computer : test-node\\n'
+exit '''+str(info_exit)+'\n')
             (root/'payload').write_text(output)
             (root/'timed_call.sh').write_text('''#!/bin/bash
 cp "$JOB_DIR/payload" "${'''+('SOLVER_STDERR_LOG' if stderr else 'SOLVER_LOG')+'''}"
@@ -29,7 +37,28 @@ exit '''+str(code)+'\n')
             with (root/'results/batch_000000_task_000000000.csv').open() as stream:row=next(csv.DictReader(stream))
             self.assertEqual(row['status'],expected)
             self.assertEqual(row['complete'],'true')
+            with tarfile.open(root/'results'/row['archive']) as archive:
+                solver_log = next(item for item in archive.getmembers() if item.name.endswith('.solver.log'))
+                text = archive.extractfile(solver_log).read().decode()
+                self.assertFalse(any(item.name.endswith('computer-info.header') for item in archive.getmembers()))
+                if computer_info:
+                    self.assertTrue(text.startswith(('0.00/0.00\t' if timestamp else '')+'% Computer : test-node\n'), text)
+                    arguments = (root/'info-arguments').read_text().splitlines()
+                    self.assertEqual('--timestamp' in arguments, timestamp)
+                    self.assertIn('100MiB', arguments)
+                    if info_exit:
+                        diagnostic = next(item for item in archive.getmembers() if item.name.endswith('.controller.log'))
+                        self.assertIn('continuing with the solver', archive.extractfile(diagnostic).read().decode())
+                else:
+                    self.assertFalse((root/'info-arguments').exists())
             return row
+
+    def test_computer_information_survives_solver_log_truncation_and_matches_timestamps(self):
+        for timestamp in (False, True):
+            self.run_pair('% SZS status Theorem\n', 'ok', code=0, computer_info=True, timestamp=timestamp)
+
+    def test_computer_information_failure_does_not_prevent_solver_execution(self):
+        self.run_pair('% SZS status Theorem\n', 'ok', code=0, computer_info=True, info_exit=1)
 
     def test_vampire_internal_timeout_on_stdout_or_stderr(self):
         for stderr in (False,True):

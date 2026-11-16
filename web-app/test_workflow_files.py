@@ -88,6 +88,18 @@ class WorkflowFileTests(unittest.TestCase):
             workflow_files.replace(self.directory,'Makefile',body+'\ncustom:\n\techo custom\n')
         self.assertEqual(self.snapshot(),before)
 
+    def test_computer_information_setting_can_be_replaced_and_saved(self):
+        body = (self.directory/'Makefile').read_text().replace('GET_COMPUTER_INFO := true', 'GET_COMPUTER_INFO := false')
+        workflow_files.replace(self.directory, 'Makefile', body)
+        data = workflows.decisions(self.directory)
+        self.assertIs(data['get_computer_info'], False)
+        workflows.save(data, self.directory)
+        self.assertIn('GET_COMPUTER_INFO := false', (self.directory/'Makefile').read_text())
+        before = self.snapshot()
+        with self.assertRaisesRegex(ValueError, 'GET_COMPUTER_INFO'):
+            workflow_files.replace(self.directory, 'Makefile', body.replace('GET_COMPUTER_INFO := false', 'GET_COMPUTER_INFO := invalid'))
+        self.assertEqual(self.snapshot(), before)
+
     def test_normal_save_removes_obsolete_sources_and_axiom_configuration(self):
         data=workflows.decisions(self.directory)
         axiom=self.root/'old.ax';axiom.write_text('cnf(a,axiom,p).')

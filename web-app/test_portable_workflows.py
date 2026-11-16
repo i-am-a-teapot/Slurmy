@@ -46,6 +46,56 @@ class PortableWorkflowTests(unittest.TestCase):
         with patch.object(portable.subprocess,'run',side_effect=remote):
             return portable.export_bundle(self.workflow,'test-host')
 
+    def test_computer_information_setting_survives_portable_round_trip(self):
+        with (self.workflow/'Makefile').open('a') as output:
+            output.write('GET_COMPUTER_INFO := false\n')
+        bundle = self.bundle(); self.addCleanup(bundle.close)
+        imported, _ = portable.import_bundle(bundle, 'without-computer-report')
+        self.assertIs(workflows.decisions(imported, check_paths=False)['get_computer_info'], False)
+        self.assertIn('GET_COMPUTER_INFO := false', (imported/'Makefile').read_text())
+
+    def test_new_and_legacy_shared_collections_remain_portable(self):
+        for index, root in enumerate(('/share/datasets/TPTP/TPTP-v10.0.0', '/share/TPTP/TPTP-v9.2.1')):
+            with self.subTest(root=root):
+                with (self.workflow/'jobpairs.csv').open() as source:
+                    row = next(csv.DictReader(source))
+                row['problem'] = 'tptp:' + root + '/Problems/SET/SET002+3.p'
+                (self.workflow/'jobpairs.csv').write_text(workflows.csv_text([row]))
+                def remote(*args, stdout, **kwargs):
+                    with tarfile.open(fileobj=stdout, mode='w') as archive:
+                        directory = tarfile.TarInfo('assets'+root+'/Axioms')
+                        directory.type = tarfile.DIRTYPE; archive.addfile(directory)
+                        for name, body in [('Problems/SET/SET002+3.p', b"include('Axioms/SET001+0.ax').\n"),
+                                           ('Axioms/SET001+0.ax', b'fof(a,axiom,p).\n')]:
+                            member = tarfile.TarInfo('assets'+root+'/'+name); member.size = len(body)
+                            archive.addfile(member, io.BytesIO(body))
+                    return type('Result', (), dict(returncode=0))()
+                with patch.object(portable.subprocess, 'run', side_effect=remote):
+                    bundle = portable.export_bundle(self.workflow, 'test-host')
+                self.addCleanup(bundle.close)
+                if index:
+                    # Older exporters had neither the default-root nor computer-info fields.
+                    legacy = io.BytesIO()
+                    with tarfile.open(fileobj=bundle, mode='r:gz') as source, tarfile.open(fileobj=legacy, mode='w:gz') as target:
+                        for member in source:
+                            content = source.extractfile(member) if member.isfile() else None
+                            if member.name == 'workflow.json':
+                                payload = json.load(content)
+                                payload.pop('default_tptp_root', None)
+                                payload['settings'].pop('get_computer_info', None)
+                                body = json.dumps(payload).encode(); member.size = len(body); content = io.BytesIO(body)
+                            target.addfile(member, content)
+                    legacy.seek(0); bundle = legacy
+                imported, count = portable.import_bundle(bundle, 'shared-'+str(index))
+                self.assertEqual(count, 1)
+                pair = read_pairs(imported/'jobpairs.csv')[0]
+                self.assertFalse(pair['remote_problem'])
+                library = imported/'assets'/root.lstrip('/')
+                self.assertEqual(Path(pair['problem']), library/'Problems/SET/SET002+3.p')
+                self.assertIn(str(library), pair['command'])
+                self.assertTrue((library/'Axioms/SET001+0.ax').is_file())
+                self.assertTrue(workflows.decisions(imported, check_paths=False)['get_computer_info'])
+
     def test_round_trip_survives_original_input_removal_and_can_prepare(self):
         bundle=self.bundle();self.addCleanup(bundle.close)
         shutil.rmtree(self.runtime);shutil.rmtree(self.source);self.problem.unlink();shutil.rmtree(self.workflow)

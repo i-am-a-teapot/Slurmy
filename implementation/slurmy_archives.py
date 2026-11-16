@@ -19,8 +19,28 @@ ARCHIVE_SUFFIXES = ('.zip', '.tar', '.tar.gz', '.tgz', '.tar.bz2', '.tbz2', '.ta
 PROBLEM_SUFFIXES = ('.p', '.tptp')
 AXIOM_SUFFIXES = ('.ax', '.p', '.tptp')
 CACHE = Path(__file__).resolve().parents[1] / 'workflows/my-workflows' / '.problem-archives'
-TPTP_ROOT = '/share/TPTP'
-TPTP_DEFAULT_VERSION = 'TPTP-v9.2.1'
+TPTP_ROOT = '/share/datasets/TPTP'
+TPTP_DEFAULT_VERSION = 'TPTP-v10.0.0'
+TPTP_DEFAULT_ROOT = TPTP_ROOT + '/' + TPTP_DEFAULT_VERSION
+TPTP_COLLECTION_BASES = (TPTP_ROOT, '/share/TPTP')
+
+
+def tptp_collection_root(problem: str) -> str | None:
+    """Find a shared problem's versioned include root, including saved old paths."""
+    path = PurePosixPath(problem)
+    if '..' in path.parts:
+        return None
+    for base in TPTP_COLLECTION_BASES:
+        try:
+            parts = path.relative_to(base).parts
+        except ValueError:
+            continue
+        if len(parts) >= 3 and parts[0].startswith('TPTP-') and parts[1] == 'Problems':
+            return str(PurePosixPath(base) / parts[0])
+    legacy = '/share/Slurmy-TPTP-v9.2.1'
+    if str(path).startswith(legacy + '/Problems/'):
+        return legacy
+    return None
 
 
 def tptp_relative(pattern: str) -> str:
@@ -45,7 +65,7 @@ def contained(path):
 if mode == 'browse':
     path = os.path.join(root, relative)
     if not (os.path.realpath(path) == os.path.realpath(root) or contained(path)) or not os.path.isdir(path):
-        raise SystemExit('TPTP directory is missing or outside /share/TPTP.')
+        raise SystemExit('TPTP directory is missing or outside ' + root + '.')
     entries = []
     for entry in os.scandir(path):
         if entry.name.startswith('.') or not contained(entry.path): continue

@@ -6,16 +6,40 @@ import tarfile
 import os
 from pathlib import Path
 import subprocess
+import shutil
 import tempfile
 import unittest
 from unittest.mock import patch
 
 from slurmy_web import workflows
 from slurmy import generate
-from slurmy_archives import tptp_relative, browse_cluster_tptp
+from slurmy_archives import tptp_relative, browse_cluster_tptp, tptp_collection_root, TPTP_DEFAULT_ROOT
 
 
 class ClusterSettingsTests(unittest.TestCase):
+    def test_new_dataset_root_and_computer_report_generation(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            (root/'limiter').touch()
+            problem = TPTP_DEFAULT_ROOT + '/Problems/SET/SET002+3.p'
+            self.assertEqual(tptp_collection_root(problem), TPTP_DEFAULT_ROOT)
+            self.assertIsNone(tptp_collection_root('/share/datasets/TPTP/TPTP-v10.0.0/../secret'))
+            row = dict(solver_name='test', command='./solver {{problem}}', solver_directory=str(root),
+                       problem='tptp:'+problem, wc_limit=3, cpu_limit=2, mem_limit='100MiB', cores=1,
+                       threads_per_core=1, cpus='auto', exclusive_cpu='false', exclusive_node='false')
+            (root/'jobpairs.csv').write_text(workflows.csv_text([row]))
+            (root/'building.txt').write_text(str(root)+'\n\n')
+            for flag, enabled, expected in [('--timestamp', True, 1), ('', True, 0), ('--label=--timestamp', False, 0)]:
+                (root/'resource_limiter_template.txt').write_text(f'{root}/limiter {flag} {{{{solver_command}}}}')
+                generate(root/'jobpairs.csv', root/'building.txt', root/'resource_limiter_template.txt', get_computer_info=enabled)
+                assets = root/'submit.sh.files'
+                config = (assets/'calls/0/config.sh').read_text()
+                self.assertIn('TPTP_DEFAULT_ROOT='+TPTP_DEFAULT_ROOT, config)
+                self.assertIn(f'GET_COMPUTER_INFO={int(enabled)}', config)
+                self.assertIn(f'COMPUTER_INFO_TIMESTAMP={expected}', config)
+                self.assertTrue((assets/'GetComputerInfo').is_file())
+                shutil.rmtree(assets); (root/'submit.sh').unlink()
+
     def test_two_solvers_use_only_1429_selected_archive_problems(self):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)
@@ -82,8 +106,8 @@ class ClusterSettingsTests(unittest.TestCase):
 
     def test_versioned_and_legacy_paths_and_traversal(self):
         self.assertEqual(tptp_relative('tptp://TPTP-v9.2.1/Problems/AGT/*.p'), 'TPTP-v9.2.1/Problems/AGT/*.p')
-        self.assertEqual(tptp_relative('tptp://Problems/AGT/*.p'), 'TPTP-v9.2.1/Problems/AGT/*.p')
-        self.assertEqual(tptp_relative('tptp://AGT/*.p'), 'TPTP-v9.2.1/Problems/AGT/*.p')
+        self.assertEqual(tptp_relative('tptp://Problems/AGT/*.p'), 'TPTP-v10.0.0/Problems/AGT/*.p')
+        self.assertEqual(tptp_relative('tptp://AGT/*.p'), 'TPTP-v10.0.0/Problems/AGT/*.p')
         for value in ('tptp://../secret', 'tptp://TPTP-v9.2.1/../secret', 'tptp://a\n'):
             with self.assertRaises(ValueError):
                 tptp_relative(value)

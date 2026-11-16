@@ -18,7 +18,7 @@ import shutil
 import sys
 import tarfile
 from typing import Sequence
-from slurmy_archives import expand_axiom_pattern
+from slurmy_archives import expand_axiom_pattern, tptp_collection_root, TPTP_DEFAULT_ROOT
 
 VERSION = "1.0.0"
 COLUMNS = ("solver_name", "command", "solver_directory", "problem", "wc_limit", "cpu_limit", "mem_limit", "cores",
@@ -107,10 +107,7 @@ def read_pairs(filename: Path, host=None, partition=None) -> list[dict]:
                 problem=path_at(row["problem"],filename.parent)
                 if not problem.is_file():raise SlurmyError(f"{label}: problem does not exist: {problem}")
                 local_problems[row["problem"]]=problem
-            versioned_problem = (str(problem).startswith('/share/TPTP/') and
-                                 len(problem.parts) >= 6 and problem.parts[4] == 'Problems')
-            legacy_problem = str(problem).startswith('/share/Slurmy-TPTP-v9.2.1/Problems/')
-            if cluster_problem and (not (versioned_problem or legacy_problem) or '..' in problem.parts):
+            if cluster_problem and not tptp_collection_root(str(problem)):
                 raise SlurmyError(f"{label}: invalid cluster TPTP problem: {problem}")
             if not row["problem"]:
                 raise SlurmyError(f"{label}: problem does not exist: {problem}")
@@ -263,7 +260,8 @@ def write_script(path: Path, content: str) -> None:
 def generate(jobpairs: Path, building: Path, limiter_file: Path,
              axioms_file: Path | None = None, batch_size: int = 1, progress=None,
              max_outstanding: int = 32, pair_order: str | None = None,
-             materialize_calls: bool = True, host=None, partition=None) -> Path:
+             materialize_calls: bool = True, host=None, partition=None,
+             get_computer_info: bool = True) -> Path:
     tasks = read_pairs(jobpairs, host, partition)
     positive(str(batch_size), 'batch size')
     positive(str(max_outstanding), 'maximum outstanding SLURM tasks')
@@ -278,6 +276,7 @@ def generate(jobpairs: Path, building: Path, limiter_file: Path,
         raise SlurmyError("resource_limiter_template.txt must contain {{solver_command}}")
     # First word is an executable path, not an arbitrary shell expression.
     words = shlex.split(limiter)
+    computer_info_timestamp = '--timestamp' in words
     limiter_path = path_at(words[0], limiter_file.parent)
     roots = [build.root for build in builds]
     if not any(limiter_path.is_relative_to(root) for root in roots):
@@ -342,7 +341,8 @@ def generate(jobpairs: Path, building: Path, limiter_file: Path,
                     "batch_size": batch_size, "pair_order": pair_order, "local_calls_materialized": materialize_calls, "result_columns": RESULT_COLUMNS,
                     "planned_batch_tasks": [[t["task_id"] for t in batch] for batch in batches],
                     "batch_policy": "one solver-problem pair at a time per batch; batches have matching core and sharing requests; solver-major batches do not span configurations",
-                    "buffers": {"per_call_seconds": 30, "per_call_memory_mib": 128, "batch_seconds": 60}}
+                    "get_computer_info": get_computer_info,
+                    "buffers": {"per_call_seconds": 80 if get_computer_info else 30, "per_call_memory_mib": 128, "batch_seconds": 60}}
         (assets / "metadata.json").write_text(json.dumps(metadata, indent=2) + "\n")
         (assets / "manifest.jsonl").write_text("".join(json.dumps(t) + "\n" for t in tasks))
         (assets/'call-bundles').mkdir()
@@ -383,13 +383,14 @@ def generate(jobpairs: Path, building: Path, limiter_file: Path,
                         + task["limiter_command"] + "\n"
                     )
                     emit("limiter.sh", limiter_script)
-                    default_tptp = '/share/TPTP/TPTP-v9.2.1'
-                    if task['remote_problem'] and task['problem'].startswith('/share/TPTP/'):
-                        default_tptp = str(Path('/').joinpath(*Path(task['problem']).parts[1:4]))
+                    default_tptp = (tptp_collection_root(task['problem']) if task['remote_problem'] else None) or TPTP_DEFAULT_ROOT
                     config = "".join(key.upper() + "=" + shlex.quote(str(value)) + "\n" for key, value in {
                         "task_id": task["task_id"], "task_key": task["task_key"], "batch_id": task["batch_id"],
                         "cores": task["cores"], "threads_per_core": task["threads_per_core"],
                         "cpus": task["cpus"], "wc_limit": task["wc_limit"],
+                        "cpu_limit": task["cpu_limit"], "mem_limit_mib": math.ceil(task["mem_limit"] / 2**20),
+                        "get_computer_info": int(get_computer_info),
+                        "computer_info_timestamp": int(computer_info_timestamp),
                             "solver_root_rel": task['solver_root'].lstrip("/"),
                             "tptp_root_rel": '.slurmy-tptp' if axioms else '',
                             "tptp_default_root": os.environ.get('SLURMY_TPTP_ROOT') or default_tptp}.items())
@@ -403,7 +404,7 @@ def generate(jobpairs: Path, building: Path, limiter_file: Path,
             config += shell_array("TASK_MEMORY", [math.ceil(t['mem_limit'] / 2**20) for t in batch])
             config += f"BATCH_ID={i}\nEXCLUSIVE_CPU={int(any(t['exclusive_cpu'] for t in batch))}\nEXCLUSIVE_NODE={int(any(t['exclusive_node'] for t in batch))}\n"
             config += f"MEMORY_MIB={len(batch) * (max(math.ceil(t['mem_limit'] / 2**20) for t in batch) + 128)}\n"
-            config += f"WALL_SECONDS={60 + sum(t['wc_limit'] + 30 for t in batch)}\n"
+            config += f"WALL_SECONDS={60 + sum(t['wc_limit'] + (80 if get_computer_info else 30) for t in batch)}\n"
             config += shell_array("TASK_THREADS_PER_CORE", [t["threads_per_core"] for t in batch])
             config += f"MAX_CORES={max(t['cores'] for t in batch)}\nMAX_CPUS={max(t['cpus'] for t in batch)}\n"
             config += f"MAX_THREADS_PER_CORE={max(t['threads_per_core'] for t in batch)}\n"
@@ -421,6 +422,7 @@ def generate(jobpairs: Path, building: Path, limiter_file: Path,
             shutil.copymode(source, destination)
         (assets / "submission_settings.sh").write_text(f'MAX_OUTSTANDING_DEFAULT={max_outstanding}\nBUILD_COUNT_DEFAULT={sum(build.recipe is not None for build in builds)}\nLOCAL_PROBLEM_FILES_DEFAULT={len(problems)}\nCLUSTER_PROBLEM_FILES_DEFAULT={len({task["problem"] for task in tasks if task["remote_problem"]})}\n', encoding='utf-8')
         shutil.copyfile(REPO / "implementation/job_names.py", assets / "job_names.py")
+        shutil.copyfile(REPO / "implementation/tools/GetComputerInfo", assets / "GetComputerInfo")
         # Reuse the local build driver. Remote recipes build in a disposable
         # copy of the declared root; downloaded files preserve that layout.
         shutil.copy2(REPO / "implementation/build/slurmy-build.py", assets / "builds/driver.py")
@@ -520,6 +522,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("resource_limiter_template", type=Path)
     parser.add_argument('--axioms-file', type=Path, help='optional file with one TPTP axiom path or glob per line')
     parser.add_argument("--materialize-calls",action="store_true",help="also write individual pair scripts locally for inspection")
+    parser.add_argument('--no-computer-info', action='store_true', help='omit computer information from solver output')
     parser.add_argument("--batch-size", type=int, default=1, help="maximum solver-problem pairs owned by one SLURM array task; solver-problem pairs run sequentially (default: 1)")
     parser.add_argument("--max-outstanding", type=int, default=32, help="maximum pending/running SLURM tasks from one job (default: 32)")
     parser.add_argument('--pair-order', choices=PAIR_ORDERS,
@@ -531,7 +534,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         output = generate(args.jobpairs.resolve(), args.building.resolve(), args.resource_limiter_template.resolve(),
                           args.axioms_file.resolve() if args.axioms_file else None, args.batch_size,
                           max_outstanding=args.max_outstanding, pair_order=args.pair_order,
-                          materialize_calls=args.materialize_calls,progress=report)
+                          materialize_calls=args.materialize_calls,progress=report,
+                          get_computer_info=not args.no_computer_info)
     except (SlurmyError, OSError, ValueError) as exc:
         parser.error(str(exc))
     print(f"Prepared {output}. Inspect its companion files, then run it to build and submit.")

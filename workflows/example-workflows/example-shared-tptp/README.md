@@ -1,7 +1,7 @@
 # Shared cluster TPTP example
 
 Runs E on two problems stored entirely on the cluster under
-`/share/TPTP/TPTP-v9.2.1/Problems/`. No local problem files are required or uploaded.
+`/share/datasets/TPTP/TPTP-v10.0.0/Problems/`. No local problem files are required or uploaded.
 `problem-globs.txt` contains versioned `tptp://` paths; change these to select
 other problems or use globs. Each problem uses the selected TPTP version's axioms.
 

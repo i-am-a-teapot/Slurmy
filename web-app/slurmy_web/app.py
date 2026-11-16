@@ -24,7 +24,7 @@ from datetime import datetime
 
 from flask import Flask, Request, Response, abort, g, jsonify, redirect, render_template, request, session, send_file, url_for
 from werkzeug.exceptions import HTTPException
-from slurmy_archives import is_archive
+from slurmy_archives import is_archive, TPTP_DEFAULT_VERSION, TPTP_DEFAULT_ROOT
 
 from .monitor import RemoteCollector, summarize_results, ResultRecord
 from .cluster import fetch_status
@@ -551,7 +551,8 @@ def create_app():
 
     def page(template, **kwargs):
         session.setdefault('csrf', secrets.token_hex(32))
-        return render_template(template, host=host(), csrf=session['csrf'], **kwargs)
+        return render_template(template, host=host(), csrf=session['csrf'],
+                               tptp_version=TPTP_DEFAULT_VERSION, tptp_default_root=TPTP_DEFAULT_ROOT, **kwargs)
 
     @app.get('/health')
     def health():

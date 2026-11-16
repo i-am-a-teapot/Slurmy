@@ -5,6 +5,7 @@ SLURMY_PYTHON ?= $(shell command -v python3 2>/dev/null || command -v python 2>/
 export SLURMY_PYTHON
 BATCH_SIZE ?= 1
 PAIR_ORDER ?= solver-major
+GET_COMPUTER_INFO ?= true
 SLURMY_HOST ?= datalab
 SLURMY_PARTITION ?= CPU-amd
 SLURMY_RESERVATION ?=
@@ -29,13 +30,13 @@ prepare:
 	fi
 	@$(MAKE) --no-print-directory submit.sh
 
-submit.sh: Makefile $(JOBPAIRS) $(BUILDING) $(LIMITER) $(AXIOMS) $(BUILD_RECIPES) $(REPO_ROOT)/implementation/slurmy.py $(REPO_ROOT)/implementation/job_names.py $(REPO_ROOT)/implementation/check_threads.py $(REPO_ROOT)/implementation/ssh_transport.py $(REPO_ROOT)/implementation/package_inputs.py $(REPO_ROOT)/implementation/prepare_axioms.py $(REPO_ROOT)/implementation/submit_coordinator.py $(REPO_ROOT)/implementation/submission_controller.py $(REPO_ROOT)/implementation/build/slurmy-build.py $(REPO_ROOT)/implementation/templates/workflow.mk $(wildcard $(REPO_ROOT)/implementation/templates/*.sh)
+submit.sh: $(REPO_ROOT)/implementation/tools/GetComputerInfo Makefile $(JOBPAIRS) $(BUILDING) $(LIMITER) $(AXIOMS) $(BUILD_RECIPES) $(REPO_ROOT)/implementation/slurmy.py $(REPO_ROOT)/implementation/job_names.py $(REPO_ROOT)/implementation/check_threads.py $(REPO_ROOT)/implementation/ssh_transport.py $(REPO_ROOT)/implementation/package_inputs.py $(REPO_ROOT)/implementation/prepare_axioms.py $(REPO_ROOT)/implementation/submit_coordinator.py $(REPO_ROOT)/implementation/submission_controller.py $(REPO_ROOT)/implementation/build/slurmy-build.py $(REPO_ROOT)/implementation/templates/workflow.mk $(wildcard $(REPO_ROOT)/implementation/templates/*.sh)
 	@if [ -e submit.sh ] || [ -d submit.sh.files ]; then \
 		printf '♻️  Inputs changed; refreshing generated submission files.\n'; \
 		rm -f -- submit.sh; rm -rf -- submit.sh.files; \
 	fi
 	@"$(SLURMY_PYTHON)" '$(REPO_ROOT)/implementation/check_threads.py' '$(JOBPAIRS)' --host '$(SLURMY_HOST)' --partition '$(SLURMY_PARTITION)'
-	"$(SLURMY_PYTHON)" '$(REPO_ROOT)/implementation/slurmy.py' '$(JOBPAIRS)' '$(BUILDING)' '$(LIMITER)' --batch-size '$(BATCH_SIZE)' --pair-order '$(PAIR_ORDER)' --max-outstanding '$(SLURMY_MAX_OUTSTANDING)' $(if $(AXIOMS),--axioms-file '$(AXIOMS)')
+	"$(SLURMY_PYTHON)" '$(REPO_ROOT)/implementation/slurmy.py' '$(JOBPAIRS)' '$(BUILDING)' '$(LIMITER)' $(if $(filter false 0 no,$(GET_COMPUTER_INFO)),--no-computer-info) --batch-size '$(BATCH_SIZE)' --pair-order '$(PAIR_ORDER)' --max-outstanding '$(SLURMY_MAX_OUTSTANDING)' $(if $(AXIOMS),--axioms-file '$(AXIOMS)')
 	@printf '\n✅ Prepared the explicit jobpairs. Inspect submit.sh.files/.\n👉 make prepare-submit prepares again and dispatches; make submit dispatches these prepared files as-is.\n'
 
 build: prepare
