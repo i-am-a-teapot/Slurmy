@@ -13,15 +13,15 @@ from slurmy import COLUMNS, REPO, generate
 
 
 class SequentialBatchTests(unittest.TestCase):
-    def prepare(self, root, flags, size, pair_order=None, core_counts=None):
+    def prepare(self, root, flags, size, pair_order=None, core_counts=None, limits=(6, 3, '100MiB')):
         problem = root/'example.p'
         problem.touch()
         (root/'limiter').touch()
         rows = []
         for i, (socket, node) in enumerate(flags):
             rows.append(dict(solver_name=f'Solver_{i%2}', command='./solver {{problem}}',
-                solver_directory=str(root), problem=str(problem), wc_limit=6, cpu_limit=3,
-                mem_limit='100MiB', cores=core_counts[i] if core_counts else 2, threads_per_core=1,
+                solver_directory=str(root), problem=str(problem), wc_limit=limits[0], cpu_limit=limits[1],
+                mem_limit=limits[2], cores=core_counts[i] if core_counts else 2, threads_per_core=1,
                 cpus='auto', exclusive_cpu=str(socket).lower(), exclusive_node=str(node).lower()))
         pairs=root/'jobpairs.csv'
         with pairs.open('w', newline='') as output:
@@ -92,11 +92,15 @@ class SequentialBatchTests(unittest.TestCase):
                 self.assertEqual((root/'affinity.txt').read_text().splitlines(),['1','1'])
 
     def test_remote_submission_preserves_sequential_plan_and_exclusive_allocation(self):
-        for flags in ([(False,False)]*2,[(True,False)]*2,[(False,True)]*2):
-            with self.subTest(flags=flags), tempfile.TemporaryDirectory() as folder:
+        cases=[(flags,(6,3,'100MiB'),'UNLIMITED') for flags in ([(False,False)]*2,[(True,False)]*2,[(False,True)]*2)]
+        cases += [([(False,False)]*2,limits,maximum) for limits,maximum in [
+            ((0,0,'0'),'UNLIMITED'), ((0,3,'100MiB'),'6:00:00'),
+            ((0,0,'0'),'2-03:04:05'), ((6,0,'0'),'6:00:00')]]
+        for flags,limits,maximum in cases:
+            with self.subTest(flags=flags,limits=limits,maximum=maximum), tempfile.TemporaryDirectory() as folder:
                 root=Path(folder)
                 source=root/'workflow';source.mkdir()
-                assets=self.prepare(source,flags,100)
+                assets=self.prepare(source,flags,100,limits=limits)
                 home=root/'home'
                 job=home/'slurmy/jobs/test-job'
                 shutil.copytree(assets,job)
@@ -114,9 +118,10 @@ if [[ "$2" == config ]]; then
  echo 'SelectTypeParameters = CR_CORE_MEMORY'
  echo 'TaskPlugin = task/cgroup'
 else
- echo 'OverSubscribe=NO'
+ echo 'OverSubscribe=NO MaxTime=MAXIMUM'
 fi
 ''')
+                control=bin_dir/'scontrol';control.write_text(control.read_text().replace('MAXIMUM',maximum))
                 (bin_dir/'sinfo').write_text('#!/bin/bash\necho "2 8 2 64000"\n')
                 for executable in bin_dir.iterdir():executable.chmod(0o755)
                 subprocess.run(['bash',str(REPO/'implementation/templates/remote_submit.sh'),
@@ -130,7 +135,10 @@ fi
                 self.assertEqual(any(o.startswith('--cores-per-socket=') for o in options),any(socket for socket,_ in flags))
                 plan=job/'batches/batch_000000.sh'
                 output=subprocess.check_output(['bash','-c','source "$1"; printf "%s %s %s" "${#TASK_IDS[@]}" "$PARALLEL" "$MEMORY_MIB"','test',str(plan)],text=True)
-                self.assertEqual(output,'2 1 228')
+                self.assertEqual(output,'2 1 '+('0' if limits[2]=='0' else '228'))
+                expected_time=4 if limits[0] else {'UNLIMITED':0,'6:00:00':360,'2-03:04:05':3065}[maximum]
+                self.assertIn('--time='+str(expected_time),options)
+                self.assertIn('--mem='+('0M' if limits[2]=='0' else '228M'),options)
                 self.assertEqual(len(list((job/'batches').glob('batch_*.sh'))),1)
 
 

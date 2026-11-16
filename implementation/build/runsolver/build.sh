@@ -8,39 +8,32 @@ set -euo pipefail
 BUILD_TMP=$(mktemp -d "${TMPDIR:-/tmp}/slurmy-runsolver-build.XXXXXXXX")
 trap 'rm -rf -- "$BUILD_TMP"' EXIT
 
-VERSION=3.4.1
-SHA256=6fb8c8c849e09593b509a9df1aaddb94b8187f65bb217ff707c8252fddd79e2f
-URL="https://www.cril.univ-artois.fr/~roussel/runsolver/runsolver-${VERSION}.tar.bz2"
-FALLBACK_ADDRESS=193.49.115.72
-ARCHIVE="$BUILD_TMP/runsolver.tar.bz2"
-
-for command in curl sha256sum tar make g++ install; do
-    command -v "$command" >/dev/null || {
-        echo "Missing build command: $command" >&2
-        exit 1
-    }
+# Source supplied by Geoff, src_claude_0.tgz (0 means unlimited).
+# Bundled beside this recipe so builds and portable workflows need no download.
+SOURCE="$SLURMY_BUILD_WORK/source"
+[[ -f "$SOURCE/runsolver.cc" ]] || SOURCE="$SLURMY_BUILD_WORK"
+[[ -f "$SOURCE/runsolver.cc" ]] || {
+    echo 'Missing bundled runsolver source; use implementation/build/runsolver as the build source directory.' >&2
+    exit 1
+}
+for command in make g++ install; do
+    command -v "$command" >/dev/null || { echo "Missing build command: $command" >&2; exit 1; }
 done
-
-echo "Downloading runsolver $VERSION..."
-if ! curl --fail --location --retry 1 --output "$ARCHIVE" "$URL"; then
-    echo "Normal DNS failed; retrying the verified source via its current address..."
-    curl --fail --location \
-        --resolve "www.cril.univ-artois.fr:443:$FALLBACK_ADDRESS" \
-        --output "$ARCHIVE" "$URL"
-fi
-printf '%s  %s\n' "$SHA256" "$ARCHIVE" | sha256sum --check --status
-tar -xjf "$ARCHIVE" -C "$BUILD_TMP"
+cp -R -- "$SOURCE" "$BUILD_TMP/source"
+VERSION=3.4.1
 
 # The non-NUMA form avoids dependence on a cluster-specific libnuma installation.
-make -C "$BUILD_TMP/runsolver/src" clean
-make -C "$BUILD_TMP/runsolver/src" -j"${SLURM_CPUS_PER_TASK:-1}" \
-    CFLAGS="-std=c++11 -Dtmpdebug -Wall -DVERSION=\\\"$VERSION\\\" -DSVNVERSION=\\\"4412\\\" -DWSIZE=64" \
+make -C "$BUILD_TMP/source" clean
+make -C "$BUILD_TMP/source" -j"${SLURM_CPUS_PER_TASK:-1}" \
+    CFLAGS="-fpermissive -std=c++11 -Dtmpdebug -Wall -DVERSION=\\\"$VERSION\\\" -DSVNVERSION=\\\"4412\\\" -DWSIZE=64" \
     LDFLAGS="-Wl,--build-id" \
     LIBS= \
     runsolver
 
-install -m 0755 -- "$BUILD_TMP/runsolver/src/runsolver" \
+install -m 0755 -- "$BUILD_TMP/source/runsolver" \
     "$SLURMY_BUILD_OUTPUT/runsolver"
+# In-place build drivers copy the work tree over the output tree afterwards.
+install -m 0755 -- "$BUILD_TMP/source/runsolver" "$SLURMY_BUILD_WORK/runsolver"
 runner_help=$("$SLURMY_BUILD_OUTPUT/runsolver" 2>&1 || true)
 grep -q -- '--rss-swap-limit' <<< "$runner_help" || {
     echo "Built runsolver failed its feature check." >&2

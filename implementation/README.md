@@ -78,6 +78,20 @@ runsolver. Its command should enforce the per-solver-problem pair limits and inv
 /home/me/runsolver/runsolver --cpu-limit {{cpu_limit}} --wall-clock-limit {{wc_limit}} --rss-swap-limit {{mem_limit_mib}} --timestamp --watcher-data {{watcher_log}} --var {{var_file}} --solver-data {{solver_log}} {{solver_command}}
 ```
 
+CPU, wall-clock and memory limits accept **0**, meaning no per-solver-problem-pair
+limit for that measure. Core counts and threads per core must still be positive.
+Use the included zero-aware runsolver (or a custom limiter supporting this
+convention). Solver-specific command options may interpret zero differently.
+
+A batch containing a zero wall limit requests the partition’s maximum time, or
+`--time=0` if that partition is unlimited. A zero memory limit requests
+`--mem=0` (all node memory). The outer wall-clock watchdog
+is also disabled when the wall limit is zero. SLURM partition, account and QoS
+policies still apply and may reject an unlimited request or leave it pending;
+see the [SLURM sbatch documentation](https://slurm.schedmd.com/sbatch.html).
+CPU time alone does not impose a wall-clock limit. GetComputerInfo reports these
+limits as supplied, using the new script’s `%` comment output and optional timestamps.
+
 The log placeholders designate per-solver-problem pair files: runsolver's watcher log,
 measurement variables, and captured solver output. The runner does not add
 these flags behind your back. The template can also use solver placeholders.

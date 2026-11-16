@@ -6,11 +6,11 @@
 # ping or nslookup of other hosts. Everything is read from /proc and uname, with fallbacks.
 #
 # Usage: GetComputerInfo [-h] [-p] [-d] [-a file] [-r] [-s]
-#                        [--cpu-limit N] [--wc-limit N] [--mem-limit X] [--timestamp] [--prefix S]
+#                        [--cpu-limit N] [--wc-limit N] [--mem-limit X] [--timestamp]
 #                        ComputerName Field ...
 #   ComputerName  : THIS, the local host name (short or qualified), or localhost.
 #                   Other hosts and ALL are rejected because there is no remote access.
-#   -p            : pretty print ("Name     : value" per line)
+#   -p            : pretty print ("% Name     : value" per line)
 #   -d            : debug - show the output of each host name lookup on stderr
 #   -a, -r, -s    : accepted for backward compatibility and ignored
 #   --cpu-limit N : CPU time limit (integer), reported by the CPULimit field
@@ -19,16 +19,14 @@
 #                   in MiB, or in MB (10^6 bytes) if it ends in "MB", e.g. 2456MB
 #                   (the limit options also accept the --name=value form)
 #   --timestamp   : prefix each output line with a zero time stamp "0.00/0.00<TAB>"
-#   --prefix S    : prefix each output line with exactly the string S, with no space added
-#                   (after the time stamp, if there is one), e.g. --prefix '% '
-#   Fields        : Model CPUModel AllCPUs FreeCPUs RAMPerCPU TotalRAM FreeRAM
-#                   SwapUsed FreeSwap OS CPULimit WCLimit MemLimit DateTime, or ALL
+#   Fields        : Model CPUModel TotalCPUs SpareCPUs RAMPerCPU TotalRAM FreeRAM
+#                   SwapInUse FreeSwap OS CPULimit WCLimit MemLimit DateTime, or ALL
 #--------------------------------------------------------------------------------------------------
 set -f
 export LC_ALL=C
 export PATH="/usr/bin:/bin:/usr/sbin:/sbin:${PATH}"
 
-AllFields=(Model CPUModel AllCPUs FreeCPUs RAMPerCPU TotalRAM FreeRAM SwapUsed FreeSwap OS
+AllFields=(Model CPUModel TotalCPUs SpareCPUs RAMPerCPU TotalRAM FreeRAM SwapInUse FreeSwap OS
            CPULimit WCLimit MemLimit DateTime)
 
 #--------------------------------------------------------------------------------------------------
@@ -46,20 +44,18 @@ cat << 'EOF'
                 --mem-limit X = Memory limit (real number) in MiB, or in MB if
                                 it ends in "MB" (e.g. 2456MB)
                 --timestamp   = Prefix each output line with "0.00/0.00<TAB>"
-                --prefix S    = Prefix each output line with exactly string S
-                                (include a space if wanted, e.g. '% ')
 
     ComputerName              = THIS (or this computer's own name)
 
     Fields are  Model         = Computer model
                 CPUModel      = CPU model
-                AllCPUs       = Number of CPUs
-                FreeCPUs      = Idle CPUs
-                RAMPerCPU     = RAM per CPU (MiB)
-                TotalRAM      = Total RAM (MiB)
-                FreeRAM       = Free RAM (MiB)
-                SwapUsed      = Swap space in use (MiB)
-                FreeSwap      = Free swap space (MiB)
+                TotalCPUs     = Number of CPUs
+                SpareCPUs     = Idle CPUs
+                RAMPerCPU     = RAM per CPU
+                TotalRAM      = Total RAM
+                FreeRAM       = Free RAM
+                SwapInUse     = Swap space in use
+                FreeSwap      = Free swap space
                 OS            = Operating system
                 CPULimit      = Value of --cpu-limit
                 WCLimit       = Value of --wc-limit
@@ -99,8 +95,7 @@ Debug=0
 CPULimit=""
 WCLimit=""
 MemLimit=""
-TimeStamp=""
-LinePrefix=""
+Prefix=""
 Args=()
 while (( $# > 0 )); do
     case "$1" in
@@ -118,21 +113,8 @@ while (( $# > 0 )); do
             shift 2
             ;;
         --timestamp)
-            TimeStamp=$'0.00/0.00\t'
+            Prefix=$'0.00/0.00\t'
             shift
-            ;;
-        --prefix|--prefix=*)
-            if [[ "$1" == --prefix=* ]]; then
-                Value="${1#*=}"
-                shift
-            elif (( $# < 2 )); then
-                echo "ERROR: --prefix needs an argument"
-                Usage
-            else
-                Value="$2"
-                shift 2
-            fi
-            LinePrefix="$Value"
             ;;
         --cpu-limit=*|--wc-limit=*|--mem-limit=*)
             SetLimit "${1%%=*}" "${1#*=}"
@@ -272,7 +254,7 @@ fi
 Model=$(uname -m -p)
 
 #----CPU model and count from /proc/cpuinfo, with lscpu/nproc fallbacks
-AllCPUs=$(awk '/^processor[ \t]*:/ {n++} END {print n+0}' /proc/cpuinfo 2>/dev/null)
+TotalCPUs=$(awk '/^processor[ \t]*:/ {n++} END {print n+0}' /proc/cpuinfo 2>/dev/null)
 CPUModel=$(awk '/^model name[^:]*:/ {sub(/^[^:]*:[ \t]*/, ""); sub(/[ \t]+$/, ""); print; exit}' \
     /proc/cpuinfo 2>/dev/null)
 if [[ -z "$CPUModel" ]]; then
@@ -280,15 +262,15 @@ if [[ -z "$CPUModel" ]]; then
         awk '/^Model name[^:]*:/ {sub(/^[^:]*:[ \t]*/, ""); sub(/[ \t]+$/, ""); print; exit}')
 fi
 if [[ -z "$CPUModel" ]]; then CPUModel="Unknown"; fi
-if [[ -z "$AllCPUs" || "$AllCPUs" == "0" ]]; then
-    AllCPUs=$(nproc --all 2>/dev/null | head -1)
+if [[ -z "$TotalCPUs" || "$TotalCPUs" == "0" ]]; then
+    TotalCPUs=$(nproc --all 2>/dev/null | head -1)
 fi
-if [[ ! "$AllCPUs" =~ ^[1-9][0-9]*$ ]]; then
+if [[ ! "$TotalCPUs" =~ ^[1-9][0-9]*$ ]]; then
     echo "ERROR: Cannot determine the number of CPUs"
     exit 1
 fi
 
-#----Memory in MiB from /proc/meminfo ("kB" there means KiB) (same numbers as "free -m")
+#----Memory in MB from /proc/meminfo (same numbers as "free -m")
 read -r -a Mem < <(awk '/^MemTotal:/ {t=int($2/1024)} /^MemFree:/ {f=int($2/1024)}
     /^SwapTotal:/ {st=int($2/1024)} /^SwapFree:/ {sf=int($2/1024)}
     END {print t+0, f+0, st-sf, sf+0}' /proc/meminfo 2>/dev/null)
@@ -296,12 +278,12 @@ if (( ${#Mem[@]} != 4 )) || [[ "${Mem[0]}" == "0" ]]; then
     read -r -a Mem < <(free -m | awk '/^Mem/ {t=$2; f=$4} /^Swap/ {su=$3; sf=$4}
         END {print t+0, f+0, su+0, sf+0}')
 fi
-TotalRAM="${Mem[0]}MiB"
-FreeRAM="${Mem[1]}MiB"
-SwapUsed="${Mem[2]}MiB"
-FreeSwap="${Mem[3]}MiB"
+TotalRAM="${Mem[0]}MB"
+FreeRAM="${Mem[1]}MB"
+SwapInUse="${Mem[2]}MB"
+FreeSwap="${Mem[3]}MB"
 #----Rounded to whole MiB (/proc/meminfo "kB" are KiB, so t is in MiB)
-RAMPerCPU=$(awk -v t="${Mem[0]}" -v c="$AllCPUs" 'BEGIN {printf("%dMiB", int(t/c + 0.5))}')
+RAMPerCPU=$(awk -v t="${Mem[0]}" -v c="$TotalCPUs" 'BEGIN {printf("%dMiB", int(t/c + 0.5))}')
 
 #----Memory limit rounded to whole MiB. A value ending in "MB" is in units of 10^6 bytes,
 #----so it is converted (1 MB = 10^6/2^20 MiB), otherwise it is already in MiB.
@@ -320,14 +302,14 @@ OS=$(uname -s -r)
 DateTime=$(date '+%a %b %e %H:%M:%S %Z %Y')
 
 #----Idle CPUs, only measured if asked for because it takes a second
-FreeCPUs=""
+SpareCPUs=""
 for Field in "${Fields[@]}"; do
-    if [[ "$Field" == "FreeCPUs" ]]; then
+    if [[ "$Field" == "SpareCPUs" ]]; then
         read -r -a Stat1 < <(awk '/^cpu / {print $2+$3+$4+$5+$6+$7+$8+$9, $3, $5; exit}' /proc/stat)
         sleep 1
         read -r -a Stat2 < <(awk '/^cpu / {print $2+$3+$4+$5+$6+$7+$8+$9, $3, $5; exit}' /proc/stat)
-        FreeCPUs=$(awk -v t1="${Stat1[0]}" -v n1="${Stat1[1]}" -v i1="${Stat1[2]}" \
-                        -v t2="${Stat2[0]}" -v n2="${Stat2[1]}" -v i2="${Stat2[2]}" -v c="$AllCPUs" \
+        SpareCPUs=$(awk -v t1="${Stat1[0]}" -v n1="${Stat1[1]}" -v i1="${Stat1[2]}" \
+                        -v t2="${Stat2[0]}" -v n2="${Stat2[1]}" -v i2="${Stat2[2]}" -v c="$TotalCPUs" \
             'BEGIN {dt=t2-t1; if (dt<=0) {print c; exit}
                     idle=100*(i2-i1)/dt + 100*(n2-n1)/dt/4; if (idle>100) idle=100;
                     printf("%.15g\n", c*idle/100)}')
@@ -337,9 +319,9 @@ done
 
 #----Print it out
 if (( PrettyPrint )); then
-    printf '%s%s%-8s : %s\n' "$TimeStamp" "$LinePrefix" "Computer" "$FullName"
+    printf '%s%% %-8s : %s\n' "$Prefix" "Computer" "$FullName"
 else
-    printf '%s%s%-20s => ' "$TimeStamp" "$LinePrefix" "$FullName"
+    printf '%s%-20s => ' "$Prefix" "$FullName"
 fi
 for Field in "${Fields[@]}"; do
     Value="NO INFORMATION"
@@ -347,15 +329,15 @@ for Field in "${Fields[@]}"; do
     case "$Field" in
         Model)     Value="$Model" ;;
         CPUModel)  Value="$CPUModel"; Label="CPU" ;;
-        AllCPUs)   Value="$AllCPUs" ;;
-        FreeCPUs)  Value="$FreeCPUs" ;;
+        TotalCPUs) Value="$TotalCPUs" ;;
+        SpareCPUs) Value="$SpareCPUs" ;;
         RAMPerCPU)
             Label="Memory"
             Value="$RAMPerCPU"
             ;;
         TotalRAM)  Value="$TotalRAM" ;;
         FreeRAM)   Value="$FreeRAM" ;;
-        SwapUsed)  Value="$SwapUsed" ;;
+        SwapInUse) Value="$SwapInUse" ;;
         FreeSwap)  Value="$FreeSwap" ;;
         OS)        Value="$OS" ;;
         CPULimit)  Value="${CPULimit:-0}" ;;
@@ -364,7 +346,7 @@ for Field in "${Fields[@]}"; do
         DateTime)  Value="$DateTime" ;;
     esac
     if (( PrettyPrint )); then
-        printf '%s%s%-8s : %s\n' "$TimeStamp" "$LinePrefix" "$Label" "$Value"
+        printf '%s%% %-8s : %s\n' "$Prefix" "$Label" "$Value"
     else
         printf '%s; ' "$Value"
     fi

@@ -66,6 +66,12 @@ def positive(value: str, name: str) -> int:
     return int(value)
 
 
+def nonnegative(value: str, name: str) -> int:
+    if not re.fullmatch(r"(?:0|[1-9][0-9]*)", str(value)):
+        raise SlurmyError(f"{name}: expected a nonnegative integer (0 means no limit), got {value!r}")
+    return int(value)
+
+
 def boolean(value: str, name: str) -> bool:
     if value.strip().lower() not in {"", "true", "false"}:
         raise SlurmyError(f"{name}: expected true or false")
@@ -73,9 +79,9 @@ def boolean(value: str, name: str) -> bool:
 
 
 def memory_bytes(value: str) -> int:
-    match = re.fullmatch(r"([1-9][0-9]*)\s*(MB|MiB|GB|GiB|TB|TiB)?", value, re.I)
+    match = re.fullmatch(r"(0|[1-9][0-9]*)\s*(MB|MiB|GB|GiB|TB|TiB)?", value, re.I)
     if not match:
-        raise SlurmyError(f"invalid mem_limit {value!r}; use e.g. 1200MiB or 2GB")
+        raise SlurmyError(f"invalid mem_limit {value!r}; use 0 for no limit, or e.g. 1200MiB or 2GB")
     factors = {"mb": 10**6, "mib": 2**20, "gb": 10**9, "gib": 2**30,
                "tb": 10**12, "tib": 2**40}
     return int(match[1]) * factors[(match[2] or "MB").lower()]
@@ -122,7 +128,7 @@ def read_pairs(filename: Path, host=None, partition=None) -> list[dict]:
                     "solver_root": str(solver_root),
                     "solver": solver_name or Path(shlex.split(command)[0]).name}
             for key in ("wc_limit", "cpu_limit"):
-                task[key] = positive(row[key].strip(), f"{label}: {key}")
+                task[key] = nonnegative(row[key].strip(), f"{label}: {key}")
             if row['cores'].strip().lower() == 'all':
                 if not boolean(row.get('exclusive_cpu') or '', f'{label}: exclusive_cpu'):
                     raise SlurmyError(f'{label}: All cores requires dedicated whole CPU sockets.')
@@ -169,6 +175,10 @@ def read_builds(filename: Path, check_paths: bool = True) -> list[BuildSpec]:
             root = path_at(record.get('root', ''), filename.parent)
             source = path_at(record['source'], filename.parent) if record.get('source') else None
             recipe = path_at(record['recipe'], filename.parent) if record.get('recipe') else None
+            # The bundled limiter is built offline; carry its source even for
+            # older workflows whose build resource left the source field blank.
+            if source is None and recipe == REPO / 'implementation/build/runsolver/build.sh':
+                source = recipe.parent / 'source'
             artifact = record.get('artifact') or None
             if check_paths and (not root.is_dir() or (source and not source.is_dir()) or (recipe and not recipe.is_file())):
                 raise SlurmyError(f'build root, source, or recipe does not exist: {record}')
@@ -404,8 +414,10 @@ def generate(jobpairs: Path, building: Path, limiter_file: Path,
                 config += shell_array(name, [t[key] for t in batch])
             config += shell_array("TASK_MEMORY", [math.ceil(t['mem_limit'] / 2**20) for t in batch])
             config += f"BATCH_ID={i}\nEXCLUSIVE_CPU={int(any(t['exclusive_cpu'] for t in batch))}\nEXCLUSIVE_NODE={int(any(t['exclusive_node'] for t in batch))}\n"
-            config += f"MEMORY_MIB={len(batch) * (max(math.ceil(t['mem_limit'] / 2**20) for t in batch) + 128)}\n"
-            config += f"WALL_SECONDS={60 + sum(t['wc_limit'] + (80 if get_computer_info else 30) for t in batch)}\n"
+            memory = 0 if any(t["mem_limit"] == 0 for t in batch) else len(batch) * (max(math.ceil(t["mem_limit"] / 2**20) for t in batch) + 128)
+            config += f"MEMORY_MIB={memory}\n"
+            wall = 0 if any(t["wc_limit"] == 0 for t in batch) else 60 + sum(t["wc_limit"] + (80 if get_computer_info else 30) for t in batch)
+            config += f"WALL_SECONDS={wall}\n"
             config += shell_array("TASK_THREADS_PER_CORE", [t["threads_per_core"] for t in batch])
             config += f"MAX_CORES={max(t['cores'] for t in batch)}\nMAX_CPUS={max(t['cpus'] for t in batch)}\n"
             config += f"MAX_THREADS_PER_CORE={max(t['threads_per_core'] for t in batch)}\n"

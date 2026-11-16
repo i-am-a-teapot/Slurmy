@@ -138,8 +138,8 @@ def submission_fit(configurations, counts, batch_size, pair_order, maximum_outst
             command = configuration.get('command') or ''
             key += (configuration.get('solver_name') or (Path(shlex.split(command)[0]).name if command else ''),
                     configuration.get('solver_directory', ''), command,
-                    int(configuration.get('wc_limit') or 1), int(configuration.get('cpu_limit') or 1),
-                    memory_bytes(str(configuration.get('mem_limit') or '1MiB')))
+                    int(configuration.get('wc_limit', 1)), int(configuration.get('cpu_limit', 1)),
+                    memory_bytes(str(configuration.get('mem_limit', '1MiB'))))
         groups[key] += count
     size = positive(str(batch_size), 'solver-problem pairs per batch')
     free = max(0, 50-active_tasks) if active_tasks is not None else 50

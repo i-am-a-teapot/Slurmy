@@ -112,6 +112,13 @@ PARTITION_INFO=$(scontrol show partition -o "$PARTITION")
 [[ "$PARTITION_INFO" != *OverSubscribe=FORCE* ]] || {
     echo 'Selected partition forces CPU sharing; exclusive cores cannot be guaranteed.' >&2; exit 1;
 }
+# No per-pair wall limit must still respect the partition's finite batch limit.
+# Reuse the partition query above rather than adding another SSH/scheduler read.
+PARTITION_WALL_SECONDS=0
+partition_max=$(sed -nE 's/.*(^|[[:space:]])MaxTime=([^[:space:]]+).*/\2/p' <<< "$PARTITION_INFO")
+if [[ "$partition_max" =~ ^(([0-9]+)-)?([0-9]+):([0-9]+):([0-9]+)$ ]]; then
+    PARTITION_WALL_SECONDS=$((10#${BASH_REMATCH[2]:-0} * 86400 + 10#${BASH_REMATCH[3]} * 3600 + 10#${BASH_REMATCH[4]} * 60 + 10#${BASH_REMATCH[5]}))
+fi
 # Require a homogeneous topology rather than silently guessing a socket size.
 TOPOLOGY=$(sinfo -p "$PARTITION" -N -h -o '%X %Y %Z %m' | sort -u)
 [[ $(wc -l <<< "$TOPOLOGY") == 1 ]] || {
@@ -152,8 +159,11 @@ for plan in plans/batch_*.sh; do
     if (( EXCLUSIVE_CPU )); then SLOT_CORES=$((MAX_CPUS * CORES_PER_SOCKET)); fi
     SLOT_MEMORY=$((MEMORY_MIB / ${#TASK_IDS[@]}))
     capacity=$((SOCKETS * CORES_PER_SOCKET / SLOT_CORES))
-    memory_capacity=$((NODE_MEMORY / SLOT_MEMORY))
-    (( capacity <= memory_capacity )) || capacity=$memory_capacity
+    # Zero requests all node memory; do not divide by the unlimited sentinel.
+    if (( SLOT_MEMORY > 0 )); then
+        memory_capacity=$((NODE_MEMORY / SLOT_MEMORY))
+        (( capacity <= memory_capacity )) || capacity=$memory_capacity
+    fi
     if (( EXCLUSIVE_CPU )); then
         socket_capacity=$((SOCKETS / MAX_CPUS))
         (( capacity <= socket_capacity )) || capacity=$socket_capacity
@@ -168,6 +178,10 @@ for plan in plans/batch_*.sh; do
         file=$(printf 'batches/batch_%06d.sh' "$next_batch")
         # Preserve the generated wall budget, including optional host-info collection.
         wall=$WALL_SECONDS
+        if (( wall == 0 && PARTITION_WALL_SECONDS > 0 )); then
+            wall=$PARTITION_WALL_SECONDS
+            echo "Batch $next_batch: no per-pair wall limit; SLURM partition $PARTITION limits the batch to $partition_max."
+        fi
         {
             printf 'TASK_IDS=('; printf ' %q' "${TASK_IDS[@]:first:count}"; printf ' )\n'
             printf 'TASK_CORES=('; printf ' %q' "${TASK_CORES[@]:first:count}"; printf ' )\n'

@@ -77,7 +77,7 @@ if(document.body.dataset.page==='new'){
   catch(error){if(request!==limiterRequest)return;limiterCopyError(error.message);limiterPreview.textContent='Could not load this limiter.';}
  });
  limiterConfirm.addEventListener('click',()=>{if(!limiterChoice)return;$('[name="limiter"]').value=limiterChoice.invocation;$('[name="limiter"]').refreshShell?.();let card=$('#limiter-resources .resource');if(!card)card=addResource('limiter');fill(card,limiterChoice.resource);visibility();for(const input of card.querySelectorAll('[data-path]')){delete input.dataset.validated;if(input.value.trim())validatePath(input);}updateLimiterStatus();limiterDialog.close();});
- if(!limiterLoaded)addResource('limiter',editing?null:{root:`${repoRoot}/implementation/build/runsolver`,mode:'script',script:`${repoRoot}/implementation/build/runsolver/build.sh`,artifact:'runsolver',source:''});
+ if(!limiterLoaded)addResource('limiter',editing?null:{root:`${repoRoot}/implementation/build/runsolver`,mode:'script',script:`${repoRoot}/implementation/build/runsolver/build.sh`,artifact:'runsolver',source:`${repoRoot}/implementation/build/runsolver/source`});
  $('[name="axiom_mode"]').value=initial.axiom_globs?.length?'custom':'cluster';
  prefillExamples(form);
  const picker=$('#path-browser'),browserLocationKey='slurmy-last-browser-directory';let pickedInput=null,pickerDirectory='',pickedPathCallback=null,browseRequest=0,remoteBrowser=false;
@@ -270,7 +270,7 @@ if(document.body.dataset.page==='new'){
    !/^\.\/solver(?:\s|$)/.test(value('command'));
   const buildReady=!buildSelected||((!value('build_source')||pathReady('build_source'))&&pathReady('build_script'));
   const positive=name=>{const input=card.querySelector(`[name="${name}"]`);return input.value.trim()!==''&&input.validity.valid&&Number(input.value)>0;};
-  const limitsReady=card.querySelector('[name="threads_per_core"]').dataset.threadValid==='true'&&['wc_limit','cpu_limit','threads_per_core'].every(positive)&&positive('cores')&&card.querySelector('[name="cores"]').dataset.coreValid==='true'&&
+  const limitsReady=card.querySelector('[name="threads_per_core"]').dataset.threadValid==='true'&&['wc_limit','cpu_limit'].every(name=>/^(0|[1-9][0-9]*)$/.test(value(name)))&&positive('threads_per_core')&&positive('cores')&&card.querySelector('[name="cores"]').dataset.coreValid==='true'&&
    /^\s*(?:\d+(?:\.\d+)?)(?:\s*(?:[kmgpt]i?b?|b))?\s*$/i.test(value('mem_limit'))&&
    ['exclusive_cpu','exclusive_node'].every(name=>['true','false'].includes(value(name)));
   for(const [section,ready,good,bad] of [

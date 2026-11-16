@@ -69,6 +69,11 @@ class ApiTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,'Unsupported sbatch'):
             api.batch_request(['--unknown=1'],'true','/tmp',{})
 
+    def test_zero_memory_and_unlimited_time_have_distinct_rest_representations(self):
+        job=api.batch_request(['--mem=0M','--time=0'],'true','/tmp',{})['job']
+        self.assertEqual(job['memory_per_node'],dict(set=True,number=0))
+        self.assertEqual(job['time_limit'],dict(infinite=True))
+
     def test_failed_refresh_does_not_return_an_expired_cached_response(self):
         with patch.object(api,'request',side_effect=[{'jobs':[]},RuntimeError('offline')]) as request:
             first=api.read('host','jobs')

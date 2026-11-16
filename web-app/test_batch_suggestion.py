@@ -102,6 +102,13 @@ class BatchSuggestionTests(unittest.TestCase):
         packed=batch.submission_fit(configurations,[1000,1000],41,'problem-major',100,self.nodes)
         self.assertEqual(packed['estimated_batches'],49)
 
+    def test_zero_limits_are_not_grouped_with_small_finite_limits(self):
+        base=config(1,solver_name='Same solver',command='./solver {{problem}}',wc_limit=1,cpu_limit=1,mem_limit='1MiB')
+        for field in ('wc_limit','cpu_limit','mem_limit'):
+            configurations=[base,{**base,field:0}]
+            plan=batch.submission_fit(configurations,[1,1],100,'solver-major',32,self.nodes)
+            self.assertEqual(plan['estimated_batches'],2,field)
+
     def test_submission_fit_respects_window_and_impossible_number_of_configurations(self):
         configurations=[config(1,solver_name=str(index),command='./solver {{problem}}') for index in range(50)]
         plan=batch.submission_fit(configurations,[1]*50,100,'solver-major',100,self.nodes)

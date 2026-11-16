@@ -13,13 +13,13 @@ TEMPLATES=Path(__file__).parent/'templates'
 
 
 class SolverLimitTests(unittest.TestCase):
-    def run_pair(self, output, expected, code=1, stderr=False, computer_info=False, timestamp=False, info_exit=0):
+    def run_pair(self, output, expected, code=1, stderr=False, computer_info=False, timestamp=False, info_exit=0, wall_limit=3, delay=0):
         with tempfile.TemporaryDirectory() as folder:
             root=Path(folder)
             for name in ['calls/0','rootfs/runtime','results/index','progress']:(root/name).mkdir(parents=True)
             shutil.copy2(TEMPLATES/'csv.sh',root/'csv.sh')
             (root/'szs.sh').write_text(szs.shell_library())
-            (root/'calls/0/config.sh').write_text('TASK_ID=0\nTASK_KEY=abcdef\nCORES=1\nTHREADS_PER_CORE=1\nWC_LIMIT=3\nSOLVER_ROOT_REL=runtime\n')
+            (root/'calls/0/config.sh').write_text('TASK_ID=0\nTASK_KEY=abcdef\nCORES=1\nTHREADS_PER_CORE=1\nWC_LIMIT='+str(wall_limit)+'\nSOLVER_ROOT_REL=runtime\n')
             with (root/'calls/0/config.sh').open('a') as config:
                 config.write(f'GET_COMPUTER_INFO={int(computer_info)}\nCOMPUTER_INFO_TIMESTAMP={int(timestamp)}\nCPU_LIMIT=2\nMEM_LIMIT_MIB=100\n')
             (root/'GetComputerInfo').write_text('''#!/bin/bash
@@ -29,12 +29,13 @@ printf '%% Computer : test-node\\n'
 exit '''+str(info_exit)+'\n')
             (root/'payload').write_text(output)
             (root/'timed_call.sh').write_text('''#!/bin/bash
+sleep '''+str(delay)+'''
 cp "$JOB_DIR/payload" "${'''+('SOLVER_STDERR_LOG' if stderr else 'SOLVER_LOG')+'''}"
 touch "$SOLVER_LOG" "$SOLVER_STDERR_LOG"
 printf 'TIMEOUT=false\\nMEMOUT=false\\nWCTIME=1.01\\nCPUTIME=0.9\\n' > "$VAR_FILE"
 printf 'Child status: '''+str(code)+'''\\n' > "$WATCHER_LOG"
 exit '''+str(code)+'\n')
-            result=subprocess.run(['bash',str(TEMPLATES/'call.sh'),'0','0'],env={**os.environ,'JOB_DIR':str(root)},capture_output=True,text=True,timeout=10)
+            result=subprocess.run(['bash',str(TEMPLATES/'call.sh'),'0','0'],env={**os.environ,'JOB_DIR':str(root)},capture_output=True,text=True,timeout=max(10,delay+10))
             self.assertEqual(result.returncode,0,result.stderr)
             with (root/'results/batch_000000_task_000000000.csv').open() as stream:row=next(csv.DictReader(stream))
             self.assertEqual(row['status'],expected)
@@ -54,6 +55,9 @@ exit '''+str(code)+'\n')
                 else:
                     self.assertFalse((root/'info-arguments').exists())
             return row
+
+    def test_unlimited_wall_time_survives_the_old_25_second_watchdog(self):
+        self.run_pair('% SZS status Theorem\n','ok',code=0,wall_limit=0,delay=27)
 
     def test_computer_information_survives_solver_log_truncation_and_matches_timestamps(self):
         for timestamp in (False, True):

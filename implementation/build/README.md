@@ -2,7 +2,12 @@
 
 `slurmy-build.py` is the shared local driver for running a Bash build recipe in
 a SLURM job and downloading its outputs. `runsolver/build.sh` is the included
-runsolver source-build recipe. The three-file workflow automatically reuses
+runsolver source-build recipe. Its bundled `source/` is Geoff’s zero-limit variant
+from `src_claude_0.tgz` (original URL: <https://tptp.org/Guest/src_claude_0.tgz>),
+including its GPL license. Builds require no source download. Use
+`implementation/build/runsolver/source` as the build context (the containing
+`runsolver` directory also works); builds disable NUMA to
+avoid a dependency on cluster-specific NUMA libraries. The three-file workflow automatically reuses
 this driver for each resource with a recipe in `building.txt`.
 
 In the web workflow builder, configure each solver's recipe under **Solvers**

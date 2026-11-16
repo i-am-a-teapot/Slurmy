@@ -224,7 +224,7 @@ def batch_request(options, script, cwd, environment):
             job[integers[name]] = int(value)
             if name == 'nodes': job['maximum_nodes'] = int(value)
         elif name == 'mem': job['memory_per_node'] = dict(set=True, number=int(value.removesuffix('M')))
-        elif name == 'time': job['time_limit'] = dict(set=True, number=int(value))
+        elif name == 'time': job['time_limit'] = dict(infinite=True) if int(value) == 0 else dict(set=True, number=int(value))
         elif name == 'open-mode': job['open_mode'] = [value.upper()]
         elif name == 'export':
             for item in value.split(','):
