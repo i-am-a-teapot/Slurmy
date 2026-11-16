@@ -135,10 +135,10 @@ fi
                 self.assertEqual(any(o.startswith('--cores-per-socket=') for o in options),any(socket for socket,_ in flags))
                 plan=job/'batches/batch_000000.sh'
                 output=subprocess.check_output(['bash','-c','source "$1"; printf "%s %s %s" "${#TASK_IDS[@]}" "$PARALLEL" "$MEMORY_MIB"','test',str(plan)],text=True)
-                self.assertEqual(output,'2 1 '+('0' if limits[2]=='0' else '228'))
-                expected_time=4 if limits[0] else {'UNLIMITED':0,'6:00:00':360,'2-03:04:05':3065}[maximum]
+                self.assertEqual(output,'2 1 '+('16000' if limits[2]=='0' else '228'))
+                expected_time=4 if limits[0] else 10080
                 self.assertIn('--time='+str(expected_time),options)
-                self.assertIn('--mem='+('0M' if limits[2]=='0' else '228M'),options)
+                self.assertIn('--mem='+('16000M' if limits[2]=='0' else '228M'),options)
                 self.assertEqual(len(list((job/'batches').glob('batch_*.sh'))),1)
 
 

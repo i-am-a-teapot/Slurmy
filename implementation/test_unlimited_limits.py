@@ -5,7 +5,7 @@ from pathlib import Path
 import subprocess
 import tempfile
 import unittest
-from slurmy import COLUMNS, SlurmyError, generate, read_builds, memory_bytes, nonnegative, read_pairs
+from slurmy import COLUMNS, SlurmyError, generate, read_builds, omit_unlimited_arguments, memory_bytes, nonnegative, read_pairs
 
 
 class UnlimitedLimitTests(unittest.TestCase):
@@ -26,7 +26,7 @@ class UnlimitedLimitTests(unittest.TestCase):
             generate(pairs,root/'building.txt',root/'limiter.txt')
             assets=root/'submit.sh.files'
             plan=(assets/'plans/batch_000000.sh').read_text()
-            self.assertIn('MEMORY_MIB=0\n',plan);self.assertIn('WALL_SECONDS=0\n',plan)
+            self.assertIn('MEMORY_MIB=0\n',plan);self.assertIn('WALL_SECONDS=604800\n',plan)
             limiter=(assets/'calls/0/limiter.sh').read_text()
             self.assertIn('--cpu-limit 0 --wall-clock-limit 0 --rss-swap-limit 0',limiter)
             self.assertIn('./solver 0 0 0',(assets/'calls/0/solver.sh').read_text())
@@ -38,6 +38,39 @@ class UnlimitedLimitTests(unittest.TestCase):
                 row[field]='-1';write()
                 with self.assertRaises(SlurmyError):read_pairs(pairs)
                 row[field]=0
+
+    def test_omit_solver_arguments_preserves_shell_text_and_finite_limits(self):
+        import shlex
+        task=dict(cpu_limit=0,wc_limit=0,mem_limit=0,omit_cpu_limit=True,omit_wc_limit=True,omit_mem_limit=True)
+        for option in ('--cpu-limit {{cpu_limit}}','--cpu-limit={{cpu_limit}}',"'-timeout({{cpu_limit}})'",'-t{{cpu_limit}}'):
+            result=omit_unlimited_arguments("'./my solver' "+option+" --other 'keep spaces' {{problem}} > output.log",task)
+            self.assertEqual(shlex.split(result),['./my solver','--other','keep spaces','{{problem}}','>','output.log'])
+            self.assertIn("'keep spaces'",result)
+        command='./solver --cpu-limit {{cpu_limit}} --wall={{wc_limit}} --mem={{mem_limit_mib}} --memory {{mem_limit}} {{problem}}'
+        self.assertEqual(shlex.split(omit_unlimited_arguments(command,task)),['./solver','{{problem}}'])
+        task['cpu_limit']=2
+        self.assertIn('--cpu-limit {{cpu_limit}}',omit_unlimited_arguments(command,task))
+        task['cpu_limit']=0;task['omit_cpu_limit']=False
+        self.assertIn('--cpu-limit {{cpu_limit}}',omit_unlimited_arguments(command,task))
+        task['omit_cpu_limit']=True
+        for bad in ('./solver --limits={{cpu_limit}},{{cores}}','./solver "$(echo {{wc_limit}})"','./solver {{wc_limit}}'):
+            with self.assertRaises(SlurmyError):omit_unlimited_arguments(bad,task)
+
+    def test_generated_prover_omission_does_not_change_runsolver_zero_arguments(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root=Path(folder);(root/'p.p').touch();(root/'limiter').touch()
+            row=dict(solver_name='Test',command='./solver --cpu-limit {{cpu_limit}} --wall={{wc_limit}} --mem={{mem_limit_mib}} {{problem}}',
+                     solver_directory=str(root),problem=str(root/'p.p'),cpu_limit=0,wc_limit=0,mem_limit=0,
+                     omit_cpu_limit='true',omit_wc_limit='true',omit_mem_limit='true',cores=1,threads_per_core=1)
+            with (root/'pairs.csv').open('w') as stream:
+                w=csv.DictWriter(stream,fieldnames=COLUMNS);w.writeheader();w.writerow(row)
+            (root/'builds.txt').write_text(json.dumps([dict(root=str(root))]))
+            (root/'limiter.txt').write_text(str(root/'limiter')+' --cpu-limit {{cpu_limit}} --wall-clock-limit {{wc_limit}} --rss-swap-limit {{mem_limit_mib}} {{solver_command}}')
+            generate(root/'pairs.csv',root/'builds.txt',root/'limiter.txt')
+            assets=root/'submit.sh.files/calls/0'
+            solver=(assets/'solver.sh').read_text()
+            self.assertNotIn('--cpu-limit',solver);self.assertNotIn('--wall',solver);self.assertNotIn('--mem',solver)
+            self.assertIn('--cpu-limit 0 --wall-clock-limit 0 --rss-swap-limit 0',(assets/'limiter.sh').read_text())
 
     def test_existing_default_builds_automatically_include_bundled_source(self):
         from slurmy import REPO

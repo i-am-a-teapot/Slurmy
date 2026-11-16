@@ -695,11 +695,11 @@ def copyable_solver_configurations(directory):
     resources = {str(path_at(item.get('root', ''), BASE)): item
                  for item in data.get('resources', []) if item.get('role') == 'solver'}
     fields = ('solver_name', 'solver_directory', 'command', 'wc_limit', 'cpu_limit', 'mem_limit',
-              'cores', 'threads_per_core', 'exclusive_cpu', 'exclusive_node')
+              'cores', 'threads_per_core', 'exclusive_cpu', 'exclusive_node', 'omit_cpu_limit', 'omit_wc_limit', 'omit_mem_limit')
     seen = set()
     result = []
     for config in configs:
-        card = {name: str(config.get(name) or ('false' if name in {'exclusive_cpu', 'exclusive_node'} else ''))
+        card = {name: str(config.get(name) if config.get(name) is not None else ('false' if name in {'exclusive_cpu', 'exclusive_node', 'omit_cpu_limit', 'omit_wc_limit', 'omit_mem_limit'} else ''))
                 for name in fields}
         card['threads_per_core'] = card['threads_per_core'] or '1'
         if not card['solver_name']:

@@ -23,7 +23,7 @@ from slurmy_archives import expand_axiom_pattern, tptp_collection_root, TPTP_DEF
 
 VERSION = "1.0.0"
 COLUMNS = ("solver_name", "command", "solver_directory", "problem", "wc_limit", "cpu_limit", "mem_limit", "cores",
-           "threads_per_core", "cpus", "exclusive_cpu", "exclusive_node")
+           "threads_per_core", "cpus", "exclusive_cpu", "exclusive_node", "omit_cpu_limit", "omit_wc_limit", "omit_mem_limit")
 RESULT_COLUMNS = ("task_id", "complete", "status", "return_code", "wall_seconds",
                   "cpu_seconds", "user_seconds", "system_seconds", "cpu_usage_percent",
                   "max_virtual_memory_kib", "max_memory_kib", "timed_out", "memory_out",
@@ -95,7 +95,7 @@ def read_pairs(filename: Path, host=None, partition=None) -> list[dict]:
     with filename.open(encoding="utf-8-sig", newline="") as stream:
         reader = csv.DictReader(stream)
         headers = reader.fieldnames or []
-        required = set(COLUMNS) - {"solver_name", "threads_per_core", "exclusive_cpu", "exclusive_node"}
+        required = set(COLUMNS) - {"solver_name", "threads_per_core", "exclusive_cpu", "exclusive_node", "omit_cpu_limit", "omit_wc_limit", "omit_mem_limit"}
         if len(headers) != len(set(headers)) or not required <= set(headers) or set(headers) - set(COLUMNS):
             raise SlurmyError(f"{filename}: columns must be {', '.join(COLUMNS)}; threads_per_core and exclusivity columns may be omitted")
         for row in reader:
@@ -144,7 +144,7 @@ def read_pairs(filename: Path, host=None, partition=None) -> list[dict]:
                                                  f"{label}: threads_per_core")
             task["cpus"] = 0 if row.get("cpus", "").strip().lower() in {"", "auto"} else positive(row["cpus"].strip(), f"{label}: cpus")
             task["mem_limit"] = memory_bytes(row["mem_limit"].strip())
-            for key in ("exclusive_cpu", "exclusive_node"):
+            for key in ("exclusive_cpu", "exclusive_node", *LIMIT_OMISSION_FIELDS):
                 task[key] = boolean(row.get(key) or "", f"{label}: {key}")
             task["task_key"] = hashlib.sha256(json.dumps(task, sort_keys=True).encode()).hexdigest()[:16]
             tasks.append(task)
@@ -237,6 +237,52 @@ def remote_path(path: Path) -> str:
     return '"${JOB_DIR}/rootfs"/' + shlex.quote(str(path).lstrip("/"))
 
 
+LIMIT_OMISSION_FIELDS = ('omit_cpu_limit', 'omit_wc_limit', 'omit_mem_limit')
+# Preserve the original shell text; shlex.split/join would quote away operators
+# and substitutions. Quotes and backslash escapes stay part of each word span.
+SHELL_WORD = re.compile(r'''(?:[^\s'"\\;&|<>()]+|\\[\s\S]|"(?:\\.|[^"\\])*"|'[^']*')+|[;&|<>()]+''')
+
+
+def omit_unlimited_arguments(command: str, task: dict) -> str:
+    omitted = set()
+    for limit, names in [('cpu_limit', ('cpu_limit',)), ('wc_limit', ('wc_limit',)),
+                         ('mem_limit', ('mem_limit', 'mem_limit_mib'))]:
+        if task[limit] == 0 and task.get('omit_' + limit, False):
+            omitted.update(names)
+    if not omitted:
+        return command
+    tokens = list(SHELL_WORD.finditer(command))
+    remove = set()
+    for index, token in enumerate(tokens):
+        placeholders = set(PLACEHOLDER.findall(token.group()))
+        if not placeholders & omitted:
+            continue
+        if placeholders - omitted:
+            raise SlurmyError('Cannot omit a solver argument combining an unlimited limit with another placeholder. Split it into separate arguments or edit the command.')
+        raw = token.group()
+        try:
+            word = shlex.split(raw)[0]
+        except (ValueError, IndexError):
+            raise SlurmyError('Cannot identify the solver argument to omit; edit the command.')
+        if word.startswith('-'):
+            # --limit={{cpu_limit}}, -t{{cpu_limit}}, '-timeout({{cpu_limit}})'
+            remove.add(index)
+        elif word in {'{{' + name + '}}' for name in omitted} and index > 0:
+            previous = shlex.split(tokens[index-1].group())
+            if previous and previous[0].startswith('-') and not PLACEHOLDER.search(tokens[index-1].group()):
+                remove.update((index-1, index))
+            else:
+                raise SlurmyError('Cannot identify the option before an unlimited solver limit. Use --option {{limit}} or --option={{limit}}, or edit the command.')
+        else:
+            raise SlurmyError('Cannot safely omit this unlimited solver limit inside a shell expression. Put it in a separate command-line option or edit the command.')
+        if index == 0 or (index == 1 and 0 in remove):
+            raise SlurmyError('Cannot omit the solver executable.')
+    for index in sorted(remove, reverse=True):
+        token = tokens[index]
+        command = command[:token.start()] + command[token.end():]
+    return command
+
+
 def render(command: str, replacements: dict[str, str]) -> str:
     def replace(match: re.Match) -> str:
         if match[1] not in replacements:
@@ -310,7 +356,7 @@ def generate(jobpairs: Path, building: Path, limiter_file: Path,
         values.update(mem_limit=str(math.ceil(task["mem_limit"] / 10**6)),
                       mem_limit_mib=str(math.ceil(task["mem_limit"] / 2**20)),
                       problem=(shlex.quote(task['problem']) if task['remote_problem'] else remote_path(Path(task["problem"]))))
-        task["remote_command"] = render(relocate(task["command"], command_paths), values)
+        task["remote_command"] = render(relocate(omit_unlimited_arguments(task["command"], task), command_paths), values)
         values["solver_command"] = '/bin/bash "$CALL_DIR/solver.sh"'
         for name in ("watcher_log", "var_file", "solver_log"):
             values[name] = '"${' + name.upper() + '}"'
@@ -321,7 +367,7 @@ def generate(jobpairs: Path, building: Path, limiter_file: Path,
     # order interleaves configurations, rather than making one batch per pair.
     configuration_fields = ('solver', 'solver_root', 'command', 'wc_limit', 'cpu_limit',
                             'mem_limit', 'cores', 'threads_per_core', 'cpus',
-                            'exclusive_cpu', 'exclusive_node')
+                            'exclusive_cpu', 'exclusive_node', *LIMIT_OMISSION_FIELDS)
     allocation_fields = ('cores', 'threads_per_core', 'cpus', 'exclusive_cpu', 'exclusive_node')
     open_batches = {}
     previous_configuration = None
@@ -416,7 +462,7 @@ def generate(jobpairs: Path, building: Path, limiter_file: Path,
             config += f"BATCH_ID={i}\nEXCLUSIVE_CPU={int(any(t['exclusive_cpu'] for t in batch))}\nEXCLUSIVE_NODE={int(any(t['exclusive_node'] for t in batch))}\n"
             memory = 0 if any(t["mem_limit"] == 0 for t in batch) else len(batch) * (max(math.ceil(t["mem_limit"] / 2**20) for t in batch) + 128)
             config += f"MEMORY_MIB={memory}\n"
-            wall = 0 if any(t["wc_limit"] == 0 for t in batch) else 60 + sum(t["wc_limit"] + (80 if get_computer_info else 30) for t in batch)
+            wall = 604800 if any(t["wc_limit"] == 0 for t in batch) else 60 + sum(t["wc_limit"] + (80 if get_computer_info else 30) for t in batch)
             config += f"WALL_SECONDS={wall}\n"
             config += shell_array("TASK_THREADS_PER_CORE", [t["threads_per_core"] for t in batch])
             config += f"MAX_CORES={max(t['cores'] for t in batch)}\nMAX_CPUS={max(t['cpus'] for t in batch)}\n"

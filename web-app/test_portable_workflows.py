@@ -46,6 +46,23 @@ class PortableWorkflowTests(unittest.TestCase):
         with patch.object(portable.subprocess,'run',side_effect=remote):
             return portable.export_bundle(self.workflow,'test-host')
 
+    def test_zero_limit_omission_choices_survive_portable_round_trip_and_copy(self):
+        from slurmy import generate
+        with (self.workflow/'jobpairs.csv').open() as stream:row=next(csv.DictReader(stream))
+        row.update(cpu_limit='0',wc_limit='0',mem_limit='0',omit_cpu_limit='true',omit_wc_limit='true',omit_mem_limit='true',
+                   command='./solver --cpu-limit {{cpu_limit}} --wall={{wc_limit}} --mem={{mem_limit_mib}} {{problem}}')
+        (self.workflow/'jobpairs.csv').write_text(workflows.csv_text([row]))
+        bundle=self.bundle();self.addCleanup(bundle.close)
+        imported,_=portable.import_bundle(bundle,'zero-omissions')
+        with (imported/'jobpairs.csv').open() as stream:restored=next(csv.DictReader(stream))
+        for field in ('omit_cpu_limit','omit_wc_limit','omit_mem_limit'):self.assertEqual(restored[field],'true')
+        card=workflows.copyable_solver_configurations(imported)[0]
+        self.assertEqual(card['cpu_limit'],'0');self.assertEqual(card['wc_limit'],'0');self.assertEqual(card['mem_limit'],'0')
+        self.assertEqual(card['omit_cpu_limit'],'true')
+        generate(imported/'jobpairs.csv',imported/'building.txt',imported/'resource_limiter_template.txt')
+        script=(imported/'submit.sh.files/calls/0/solver.sh').read_text()
+        self.assertNotIn('--cpu-limit',script);self.assertNotIn('--wall=',script);self.assertNotIn('--mem=',script)
+
     def test_computer_information_setting_survives_portable_round_trip(self):
         with (self.workflow/'Makefile').open('a') as output:
             output.write('GET_COMPUTER_INFO := false\n')

@@ -83,12 +83,24 @@ limit for that measure. Core counts and threads per core must still be positive.
 Use the included zero-aware runsolver (or a custom limiter supporting this
 convention). Solver-specific command options may interpret zero differently.
 
-A batch containing a zero wall limit requests the partition’s maximum time, or
-`--time=0` if that partition is unlimited. A zero memory limit requests
-`--mem=0` (all node memory). The outer wall-clock watchdog
-is also disabled when the wall limit is zero. SLURM partition, account and QoS
-policies still apply and may reject an unlimited request or leave it pending;
-see the [SLURM sbatch documentation](https://slurm.schedmd.com/sbatch.html).
+When a limit is zero, each solver configuration can choose to keep its zero-valued
+prover argument or remove it. The optional CSV columns `omit_cpu_limit`,
+`omit_wc_limit` and `omit_mem_limit` accept `true`/`false` and default to false.
+Removal applies only to the prover command, never to the resource limiter. It
+supports `--option {{cpu_limit}}`, `--option={{cpu_limit}}`, short options and
+quoted options such as `'-timeout({{cpu_limit}})'`; memory removal covers both
+`{{mem_limit}}` and `{{mem_limit_mib}}`. Ambiguous shell expressions or options
+mixing an omitted placeholder with another placeholder are rejected for manual
+editing. A positive limit always keeps its argument, even if removal was selected.
+
+A batch containing a zero wall limit requests **one week** (`--time=10080`).
+A zero memory limit requests **one quarter of node memory**, using the selected
+partition’s compute-node RAM; finite memory limits in the same batch must fit
+that allocation. The outer per-pair wall-clock watchdog is disabled when the
+wall limit is zero. These are finite SLURM batch allowances, not per-pair limits.
+SLURM partition, account and QoS policies still apply. In particular, a one-week
+request can remain pending if the partition allows less time; see the
+[SLURM sbatch documentation](https://slurm.schedmd.com/sbatch.html).
 CPU time alone does not impose a wall-clock limit. GetComputerInfo reports these
 limits as supplied, using the new script’s `%` comment output and optional timestamps.
 

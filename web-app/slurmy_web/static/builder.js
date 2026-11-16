@@ -42,7 +42,7 @@ if(document.body.dataset.page==='new'){
  }return node;}
  $('#add-solver-resource').addEventListener('click',()=>{addResource('solver',{mode:'script',artifact:''});visibility();});
  function configurationTitle(card){const name=card.querySelector('[name="solver_name"]').value.trim(),caption=$('h3',card);const toggle=$('.collapse-toggle',caption);caption.textContent=name?`${name} Configuration`:'Solver Configuration';if(toggle){toggle.setAttribute('aria-label',`${card.classList.contains('collapsed')?'Expand':'Collapse'} ${caption.textContent}`);caption.prepend(toggle);}}
- function fill(node,values){for(const [name,value] of Object.entries(values||{})){const field=node.querySelector(`[name="${name}"]`);if(field){if(name==='cores')setCoreRequest(field,value??'1');else field.value=value??'';field.refreshShell?.();}}if(node.matches('.configuration')){configurationTitle(node);updateSolverStatus(node);queueMicrotask(()=>checkThreads(node.querySelector('[name="threads_per_core"]')));}}
+ function fill(node,values){for(const [name,value] of Object.entries(values||{})){const field=node.querySelector(`[name="${name}"]`);if(field){if(name==='cores')setCoreRequest(field,value??'1');else field.value=name.startsWith('omit_')?String(value||false).toLowerCase():(value??'');field.refreshShell?.();}}if(node.matches('.configuration')){configurationTitle(node);updateSolverStatus(node);queueMicrotask(()=>checkThreads(node.querySelector('[name="threads_per_core"]')));}}
  for(const name of ['name','host','partition','reservation','batch_size','max_outstanding','pair_order','mode','jobpairs','configurations_file','limiter_mode','limiter_file','limiter']){const field=form.querySelector(`[name="${name}"]`);if(field&&initial[name]!==undefined)field.value=initial[name];}
  $('[name="get_computer_info"]').checked=initial.get_computer_info!==false;
  $('[name="limiter_mode"]').value='inline';$('[name="limiter_file"]').value='';
@@ -269,6 +269,7 @@ if(document.body.dataset.page==='new'){
  function updateSolverStatus(card){
   syncPlacement(card);
   const value=name=>card.querySelector(`[name="${name}"]`).value.trim();
+  card.querySelectorAll('[data-zero-limit]').forEach(option=>{const input=card.querySelector(`[name="${option.dataset.zeroLimit}"]`);option.hidden=!/^0(?:\s*(?:MB|MiB|GB|GiB|TB|TiB))?$/i.test(input.value.trim());});
   const buildSelected=rootValue('building_mode')==='create'&&value('build_mode')==='script';
   const pathReady=name=>{const input=card.querySelector(`[name="${name}"]`);return input.value.trim()&&input.dataset.validated===input.value;};
   const root=value('solver_directory');
