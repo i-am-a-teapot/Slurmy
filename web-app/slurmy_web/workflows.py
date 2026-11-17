@@ -15,7 +15,7 @@ import tempfile
 import time
 
 from slurmy import COLUMNS, PAIR_ORDERS, generate, order_jobpairs, path_at, positive, read_builds, read_pairs
-from slurmy_archives import expand_axiom_pattern, expand_problem_pattern, expand_cluster_tptp
+from slurmy_archives import expand_axiom_pattern, expand_axiom_source, expand_problem_pattern, expand_cluster_tptp
 from check_threads import check_requested
 
 REPO = Path(__file__).resolve().parents[2]
@@ -108,7 +108,7 @@ def specification(data, destination_override=None, progress=None):
     reservation = alias(data['reservation'].strip()) if data.get('reservation', '').strip() else ''
     data['reservation'] = reservation
     batch_size = positive(str(data.get('batch_size') or 1), 'solver-problem pairs per SLURM task')
-    max_outstanding = positive(str(data.get('max_outstanding', 32)), 'maximum outstanding SLURM tasks')
+    max_outstanding = positive(str(data.get('max_outstanding', 50)), 'maximum submitted SLURM tasks')
     pair_order = data.get('pair_order') or 'solver-major'
     if pair_order not in PAIR_ORDERS:
         raise ValueError('Choose Problem Major, Solver Major, or random solver-problem pair order.')
@@ -172,8 +172,8 @@ def specification(data, destination_override=None, progress=None):
     for value in data.get('axiom_globs', []):
         if not isinstance(value, str) or not value.strip():
             raise ValueError('Enter an axiom path or glob.')
-        pattern = str(expand_repo_root(value.strip()) or path_at(value.strip(), BASE))
-        expand_axiom_pattern(pattern, materialize=False)
+        pattern = value.strip() if value.strip().startswith('tptp://') else str(expand_repo_root(value.strip()) or path_at(value.strip(), BASE))
+        expand_axiom_source(pattern, host, materialize=False)
         axiom_patterns.append(pattern)
     recipes = {}
     if data.get('building_mode') == 'existing':
@@ -514,9 +514,9 @@ def migrate_user_runs():
             for key in ('root', 'script'):
                 if resource.get(key):
                     resource[key] = str(path_at(resource[key], old_base))
-        data['globs'] = [str(expand_repo_root(value) or path_at(value, old_base))
+        data['globs'] = [value if value.startswith('tptp://') else str(expand_repo_root(value) or path_at(value, old_base))
                          for value in data.get('globs', [])]
-        data['axiom_globs'] = [str(expand_repo_root(value) or path_at(value, old_base))
+        data['axiom_globs'] = [value if value.startswith('tptp://') else str(expand_repo_root(value) or path_at(value, old_base))
                                 for value in data.get('axiom_globs', [])]
         if data.get('limiter_mode') == 'inline':
             invocation = data.get('limiter', '')
@@ -649,7 +649,7 @@ def decisions(directory, check_paths=True):
         return match.group(1) if match else default
     config_file, globs_file = directory / 'configurations.csv', directory / 'problem-globs.txt'
     axiom_file = directory / 'axiom-globs.txt'
-    axiom_globs = [str(expand_repo_root(line) or path_at(line, directory))
+    axiom_globs = [line if line.startswith('tptp://') else str(expand_repo_root(line) or path_at(line, directory))
                    for line in axiom_file.read_text().splitlines() if line.strip()] if axiom_file.is_file() else []
     glob_values = [line.strip() for line in globs_file.read_text().splitlines() if line.strip()] if globs_file.is_file() else []
     if not glob_values:
@@ -678,7 +678,7 @@ def decisions(directory, check_paths=True):
     return resource_roles(dict(name=directory.name, host=setting('SLURMY_HOST', 'datalab'),
                 reservation=setting('SLURMY_RESERVATION', ''),
                 partition=setting('SLURMY_PARTITION', 'CPU-amd'), batch_size=setting('BATCH_SIZE', '1'),
-                max_outstanding=setting('SLURMY_MAX_OUTSTANDING', '32'),
+                max_outstanding=setting('SLURMY_MAX_OUTSTANDING', '50'),
                 pair_order=setting('PAIR_ORDER', 'solver-major'),
                 get_computer_info=setting('GET_COMPUTER_INFO', 'true').lower() not in {'false', '0', 'no'},
                 mode=mode, jobpairs=jobpairs, configurations_file='', configurations=configs,

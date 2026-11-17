@@ -32,6 +32,15 @@ class LocalDispatchTests(unittest.TestCase):
                 with self.assertRaisesRegex(RuntimeError,'interrupted'):local_dispatch.run('host',['job'])
             self.assertFalse(local_dispatch.is_active('host','job'))
 
+    def test_rpc_uses_requested_queue_columns_and_rest_cancellation(self):
+        row=dict(job_id=123,user_name='alice',current_working_directory='/home/alice/job',comment='fixture')
+        with patch.object(slurm_api,'credentials',return_value=dict(user='alice')),patch.object(slurm_api,'submission_queue',return_value=[row]):
+            self.assertEqual(local_dispatch.rpc('host',dict(argv=['squeue','-o','%Z']))['stdout'],'/home/alice/job\n')
+            self.assertEqual(local_dispatch.rpc('host',dict(argv=['squeue','-o','%i|%Z']))['stdout'],'123|/home/alice/job\n')
+        with patch.object(slurm_api,'request',return_value={}) as request:
+            self.assertEqual(local_dispatch.rpc('host',dict(argv=['scancel','123_0']))['returncode'],0)
+            request.assert_called_once_with('host','job/123_0','DELETE')
+
     def test_rpc_posts_exact_batch_request_and_returns_accepted_id(self):
         message=dict(argv=['sbatch','--partition=CPU-amd','--nodes=1','batch.sh'],script='#!/bin/bash\ntrue\n',cwd='/home/a/job',environment={'PATH':'/bin'})
         with patch.object(slurm_api,'request',return_value={'job_id':123,'errors':[]}) as request:

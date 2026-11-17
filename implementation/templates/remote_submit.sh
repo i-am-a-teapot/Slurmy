@@ -251,7 +251,7 @@ else
 fi
 # Keep this controller connected until every batch is accepted. The per-job
 # window is combined with the user's shared Slurmy capacity by the coordinator.
-MAX_OUTSTANDING=${3:-32}
+MAX_OUTSTANDING=${3:-50}
 [[ "$MAX_OUTSTANDING" =~ ^[1-9][0-9]*$ ]] || {
     echo 'SLURMY_MAX_OUTSTANDING must be a positive integer.' >&2; exit 1;
 }
@@ -290,7 +290,7 @@ PY
     for batch_id in "${RESUME_BATCHES[@]}"; do RESUME_WANTED[$batch_id]=1; done
 fi
 echo "Slurmy job ID: $1"
-echo "Submission progress: $submitted/$next_batch batches accepted (at most $MAX_OUTSTANDING outstanding)"
+echo "Submission progress: $submitted/$next_batch batches accepted (at most $MAX_OUTSTANDING submitted)"
 for batch in batches/batch_*.sh; do
     SUBMISSION_PHASE="submitting ${batch##*/}"
     source "$batch"

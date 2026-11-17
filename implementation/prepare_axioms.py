@@ -16,10 +16,20 @@ def prepare(job: Path):
     parents = set()
     print(f'Preparing custom TPTP axioms: {len(paths)} files', flush=True)
     for index, (source, relative) in enumerate(paths, 1):
-        source_path, relative_path = PurePosixPath(source), PurePosixPath(relative)
+        remote = source.startswith('tptp:')
+        source_path, relative_path = PurePosixPath(source[5:] if remote else source), PurePosixPath(relative)
         if not source_path.is_absolute() or '..' in source_path.parts or relative_path.is_absolute() or '..' in relative_path.parts:
             raise ValueError('Invalid packaged axiom path.')
-        source = root / str(source_path).lstrip('/')
+        if remote:
+            source = Path(source_path)
+            parts = source_path.parts
+            if len(parts)<7 or parts[:4] != ('/','share','datasets','TPTP') or not parts[4].startswith('TPTP-') or parts[5] != 'Axioms':
+                raise ValueError('Invalid shared axiom path.')
+            collection = Path(*parts[:5]).resolve()
+            if not source.resolve().is_relative_to(collection):
+                raise ValueError('Shared axiom escapes its TPTP collection.')
+        else:
+            source = root / str(source_path).lstrip('/')
         target = target_root / relative_path
         if target.parent not in parents:
             target.parent.mkdir(parents=True, exist_ok=True)

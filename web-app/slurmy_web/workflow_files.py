@@ -43,7 +43,7 @@ def makefile_settings(data, current, replacement):
             raise ValueError(f'Duplicate Makefile setting: {key}')
         found[key] = value.strip()
     # Missing assignments have the same defaults as the generated workflow.
-    defaults = dict(batch_size='1', pair_order='solver-major', max_outstanding='32',
+    defaults = dict(batch_size='1', pair_order='solver-major', max_outstanding='50',
                     host='datalab', partition='CPU-amd', reservation='', get_computer_info='true')
     for key, field in SETTINGS.items():
         data[field] = found.get(key, defaults[field])

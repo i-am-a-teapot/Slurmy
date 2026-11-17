@@ -23,10 +23,22 @@ def rpc(host, message):
     if argv[0] == 'squeue':
         user = slurm_api.credentials(host)['user']
         jobs = [j for j in slurm_api.submission_queue(host) if j.get('user_name') == user]
-        stdout = '\n'.join('|'.join([slurm_api.job_id(j), j.get('current_working_directory',''), j.get('comment') or '']) for j in jobs)+'\n'
+        format_string = argv[argv.index('-o')+1] if '-o' in argv else '%i|%Z|%k'
+        formats = {'%i|%Z|%k':lambda j:'|'.join([slurm_api.job_id(j),j.get('current_working_directory',''),j.get('comment') or '']),
+                   '%i|%Z':lambda j:'|'.join([slurm_api.job_id(j),j.get('current_working_directory','')]),
+                   '%Z':lambda j:j.get('current_working_directory','')}
+        if format_string not in formats: raise ValueError('Unsupported REST queue format.')
+        stdout = '\n'.join(formats[format_string](j) for j in jobs)+'\n'
         return dict(returncode=0, stdout=stdout, stderr='')
     if argv[0] == 'sacctmgr':
         return dict(returncode=0, stdout=slurm_api.credentials(host)['user']+'|||50\n', stderr='')
+    if argv[0] == 'scancel':
+        for identifier in argv[1:]:
+            import re
+            if not re.fullmatch(r'[0-9]+(?:_[0-9]+)?',identifier): raise ValueError('Invalid SLURM task ID.')
+            slurm_api.request(host,'job/'+identifier,'DELETE')
+        slurm_api._reads.clear()
+        return dict(returncode=0,stdout='',stderr='')
     if argv[0] != 'sbatch':
         raise ValueError('Unsupported scheduler bridge command.')
     payload = slurm_api.batch_request(argv[1:], message['script'], message['cwd'], message['environment'])
@@ -36,6 +48,38 @@ def rpc(host, message):
     slurm_api.remember_submission(host, identifier, payload)
     slurm_api._reads.clear()
     return dict(returncode=0, stdout=str(identifier)+'\n', stderr='')
+
+
+def remote_action(host, script, args, emit=False):
+    """Run file operations over SSH, but service live scheduler checks over REST."""
+    import base64
+    helper = """import json,os,sys
+with os.fdopen(os.dup(3),'w') as stream:
+ stream.write('SLURMY_SCHEDULER_RPC '+json.dumps(dict(argv=sys.argv[1:]))+'\\n');stream.flush()
+with os.fdopen(os.dup(4),'r') as stream: result=json.loads(stream.readline())
+sys.stdout.write(result['stdout']);sys.stderr.write(result['stderr']);sys.exit(result['returncode'])
+"""
+    encoded = base64.b64encode(helper.encode()).decode()
+    prefix = "exec 3>&1 4<&0;\n" + "function slurmy_rpc() { python3 -c "+shlex.quote("import base64;exec(base64.b64decode("+repr(encoded)+"))")+" \"$@\"; };\n" + "squeue() { slurmy_rpc squeue \"$@\"; }; scancel() { slurmy_rpc scancel \"$@\"; };\n"
+    command = shlex.join(['timeout','--signal=TERM','--kill-after=5','150','env','-u','BASH_ENV','-u','ENV','bash','--noprofile','--norc','-c',prefix+script,'slurmy-action',*args])
+    process = subprocess.Popen(['ssh',*connection_options(),'-T','-o','BatchMode=yes','-o','ConnectTimeout=10','--',host,command],stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,text=True)
+    lines=[]
+    try:
+        for line in process.stdout:
+            if line.startswith(PREFIX):
+                try: response=rpc(host,json.loads(line[len(PREFIX):]))
+                except (RuntimeError,ValueError,OSError) as error: response=dict(returncode=1,stdout='',stderr=str(error))
+                process.stdin.write(json.dumps(response)+'\n');process.stdin.flush()
+            else:
+                lines.append(line)
+                if emit:print(line,end='',flush=True)
+        return subprocess.CompletedProcess(command,process.wait(),''.join(lines))
+    finally:
+        if process.poll() is None:
+            process.terminate()
+            try:process.wait(timeout=5)
+            except subprocess.TimeoutExpired:process.kill();process.wait()
+        process.stdin.close();process.stdout.close()
 
 
 def lock_path(host, job_id):

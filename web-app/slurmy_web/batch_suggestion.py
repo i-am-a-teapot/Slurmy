@@ -51,6 +51,7 @@ def estimate(configurations, total_pairs, maximum_outstanding, nodes):
     if total_pairs < 1:
         raise ValueError('No solver-problem pairs match the selected sources.')
     capacities = []
+    breakdowns = []
     for configuration in configurations:
         all_cores = str(configuration.get('cores', '')).lower() == 'all'
         cores = 1 if all_cores else positive(str(configuration.get('cores', '')), 'solver cores')
@@ -60,6 +61,8 @@ def estimate(configurations, total_pairs, maximum_outstanding, nodes):
         if all_cores and not dedicated_socket:
             raise ValueError('All cores requires dedicated whole CPU sockets.')
         slots = 0
+        from collections import Counter
+        formulas = Counter()
         for node in nodes:
             sockets, per_socket = node['sockets'], node['cores_per_socket']
             if all_cores:
@@ -67,22 +70,29 @@ def estimate(configurations, total_pairs, maximum_outstanding, nodes):
             if cores > sockets * per_socket or threads > node['threads_per_core']:
                 continue
             if dedicated_node:
-                slots += 1
+                per_node = 1
+                formula = '1 batch/node (dedicated whole node)'
             elif dedicated_socket:
-                slots += sockets // ((cores + per_socket - 1) // per_socket)
+                needed = (cores + per_socket - 1) // per_socket
+                per_node = sockets // needed
+                formula = f'floor({sockets} sockets/node ÷ ceil({cores} cores/batch ÷ {per_socket} cores/socket))'
             else:
-                slots += sockets * per_socket // cores
+                per_node = sockets * per_socket // cores
+                formula = f'floor(({sockets} sockets × {per_socket} cores/socket) ÷ {cores} cores/batch)'
+            slots += per_node
+            formulas[(formula, per_node)] += 1
         if not slots:
             name = configuration.get('solver_name') or 'A solver configuration'
             raise ValueError(f'{name} cannot run on any node in this partition.')
         capacities.append(slots)
+        breakdowns.append([dict(nodes=count, formula=formula, per_node=per_node) for (formula,per_node),count in formulas.items()])
     if not capacities:
         raise ValueError('Add at least one solver configuration.')
     hardware = min(capacities)
-    parallelism = min(hardware, positive(str(maximum_outstanding), 'maximum outstanding SLURM tasks'))
+    parallelism = min(hardware, positive(str(maximum_outstanding), 'maximum submitted SLURM tasks'), 50)
     return dict(batch_size=max(1, (total_pairs + 2 * parallelism - 1) // (2 * parallelism)),
                 total_pairs=total_pairs, node_count=len(nodes), hardware_parallelism=hardware,
-                maximum_parallelism=parallelism, configuration_parallelism=capacities)
+                maximum_parallelism=parallelism, configuration_parallelism=capacities, capacity_breakdown=breakdowns)
 
 
 def suggest(data):
@@ -106,10 +116,24 @@ def suggest(data):
     else:
         raise ValueError('Choose how to define solver-problem pairs.')
     nodes = partition_nodes(host, partition)
-    result = estimate(configurations, count, data.get('max_outstanding', 32), nodes)
-    result.update(submission_fit(configurations, group_counts, data.get('batch_size') or result['batch_size'],
-                                 data.get('pair_order') or 'solver-major', data.get('max_outstanding', 32), nodes,
-                                 getattr(nodes, 'active_tasks', None)))
+    result = estimate(configurations, count, data.get('max_outstanding', 50), nodes)
+    balance = result['batch_size']
+    options = (data.get('pair_order') or 'solver-major', data.get('max_outstanding', 50), nodes,
+               getattr(nodes, 'active_tasks', None))
+    fit = submission_fit(configurations, group_counts, data.get('batch_size') or balance, *options)
+    selected = max(balance, fit['recommended_batch_size'] or 1)
+    suggestion = submission_fit(configurations, group_counts, selected, *options)
+    result.update(fit)
+    result.update(batch_size=selected, balance_batch_size=balance,
+                  fit_batch_size=fit['recommended_batch_size'],
+                  suggested_batches=suggestion['estimated_batches'],
+                  suggested_fits=suggestion['estimated_batches'] <= suggestion['submission_budget'])
+    # One recommendation is used by the field, explanation and submission warning.
+    result.update(configuration_count=len(configurations), problem_count=None if mode=='jobpairs' else len(problems),
+                  configuration_names=[str(c.get('solver_name') or f'Solver {i+1}') for i,c in enumerate(configurations)],
+                  workflow_submit_limit=int(data.get('max_outstanding', 50)))
+    result['recommended_batch_size'] = selected if fit['recommended_batch_size'] else None
+    result['recommended_batches'] = suggestion['estimated_batches'] if fit['recommended_batch_size'] else None
     return result
 
 
@@ -144,7 +168,7 @@ def submission_fit(configurations, counts, batch_size, pair_order, maximum_outst
         groups[key] += count
     size = positive(str(batch_size), 'solver-problem pairs per batch')
     free = max(0, 50-active_tasks) if active_tasks is not None else 50
-    budget = min(49, free, positive(str(maximum_outstanding), 'maximum outstanding SLURM tasks'))
+    budget = min(50, free, positive(str(maximum_outstanding), 'maximum submitted SLURM tasks'))
     def count_batches(size): return sum((count+size-1)//size for count in groups.values())
     batches = count_batches(size)
     recommendation = None
@@ -156,6 +180,6 @@ def submission_fit(configurations, counts, batch_size, pair_order, maximum_outst
             else: low = middle+1
         recommendation = low
     return dict(estimated_batches=batches, submission_budget=budget, account_submit_limit=50,
-                minimum_batches=len(groups), account_active_tasks=active_tasks, account_free_slots=free,
+                minimum_batches=len(groups), group_pair_counts=list(groups.values()), account_active_tasks=active_tasks, account_free_slots=free,
                 recommended_batch_size=recommendation,
                 recommended_batches=count_batches(recommendation) if recommendation else None)

@@ -27,7 +27,7 @@ class BatchSuggestionTests(unittest.TestCase):
             with self.subTest(extra=extra):
                 result = batch.estimate([config(**extra)], 1001, 100, self.nodes)
                 self.assertEqual(result['hardware_parallelism'], capacity)
-                self.assertEqual(result['batch_size'], (1001+2*capacity-1)//(2*capacity))
+                self.assertEqual(result['batch_size'], (1001+2*min(capacity,50)-1)//(2*min(capacity,50)))
         capped = batch.estimate([config()], 1001, 32, self.nodes)
         self.assertEqual(capped['maximum_parallelism'], 32)
         self.assertEqual(capped['batch_size'], 16)
@@ -93,12 +93,12 @@ class BatchSuggestionTests(unittest.TestCase):
 
     def test_submission_fit_uses_real_grouping_instead_of_total_pairs_division(self):
         configurations=[config(1,solver_name=name,command='./solver {{problem}}',wc_limit=1,cpu_limit=1,mem_limit='1GiB') for name in ['A','B']]
-        # ceil(2000/41)=49 is misleading: solver-major creates 25+25=50 batches.
-        plan=batch.submission_fit(configurations,[1000,1000],41,'solver-major',100,self.nodes)
-        self.assertEqual(plan['estimated_batches'],50)
-        self.assertEqual(plan['submission_budget'],49)
-        self.assertEqual(plan['recommended_batch_size'],42)
-        self.assertEqual(plan['recommended_batches'],48)
+        # A size of 39 creates 26+26=52 groups; 40 is needed for 25+25=50.
+        plan=batch.submission_fit(configurations,[1000,1000],39,'solver-major',100,self.nodes)
+        self.assertEqual(plan['estimated_batches'],52)
+        self.assertEqual(plan['submission_budget'],50)
+        self.assertEqual(plan['recommended_batch_size'],40)
+        self.assertEqual(plan['recommended_batches'],50)
         packed=batch.submission_fit(configurations,[1000,1000],41,'problem-major',100,self.nodes)
         self.assertEqual(packed['estimated_batches'],49)
 
@@ -110,9 +110,9 @@ class BatchSuggestionTests(unittest.TestCase):
             self.assertEqual(plan['estimated_batches'],2,field)
 
     def test_submission_fit_respects_window_and_impossible_number_of_configurations(self):
-        configurations=[config(1,solver_name=str(index),command='./solver {{problem}}') for index in range(50)]
-        plan=batch.submission_fit(configurations,[1]*50,100,'solver-major',100,self.nodes)
-        self.assertEqual(plan['minimum_batches'],50)
+        configurations=[config(1,solver_name=str(index),command='./solver {{problem}}') for index in range(51)]
+        plan=batch.submission_fit(configurations,[1]*51,100,'solver-major',100,self.nodes)
+        self.assertEqual(plan['minimum_batches'],51)
         self.assertIsNone(plan['recommended_batch_size'])
         plan=batch.submission_fit([config(1)],[1000],1,'problem-major',32,self.nodes)
         self.assertEqual(plan['recommended_batch_size'],32)

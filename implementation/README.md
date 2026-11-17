@@ -154,7 +154,7 @@ The batch's SLURM wall-time budget includes all its solver-problem pairs; memory
 covers its largest pair. Socket/node isolation can allocate more physical cores
 than the solver's affinity limit: a 12-core solver still uses 12 cores when SLURM
 allocates an entire 32-core socket. The status page shows both counts. Slurmy uses a rolling submission
-window (32 pending/running batches per job by default) so large jobs can fit
+window (50 pending/running batches per job by default) so large jobs can fit
 cluster submission limits. Set `SLURMY_MAX_OUTSTANDING` in a workflow Makefile
 or pass `--max-outstanding` to `slurmy.py` to change it. Cluster-side submitters
 coordinate under `~/slurmy/submit.lock`, divide available slots among active
@@ -409,3 +409,31 @@ Existing timestamped output lines are preserved. Other lines carry the final
 recorded pair CPU/wall totals, explicitly labelled as totals rather than per-line
 measurements. Stdout precedes stderr, with a separator explaining that the original
 interleaving was not recorded. Standard and verbose downloads remain separate.
+
+## Workflow Builder and REST Transport
+
+New workflows directly define solver configurations paired with all selected
+problem sources. CSV replacement remains available through generated workflow
+files; older explicit-pair definitions keep their saved semantics when edited.
+Problem sources can be copied from another workflow, with duplicate globs omitted.
+Local and cluster TPTP browsing are supported for both problems and custom axioms.
+Custom shared axioms use `tptp://VERSION/Axioms/...`, are copied on the cluster
+into the job-local axiom tree, and are included as real files in portable exports.
+Picker addresses navigate on Enter or blur.
+
+The submitted-task window defaults to 50. The unified batch suggestion is the
+larger of the two-wave balancing size and the smallest size that fits all
+allocation/configuration groups into the currently available submission window.
+If no size can fit, the explanation and submission warning say that later batches
+must wait for the local submitter. The explanation exposes capacity arithmetic
+and the current values; the estimate is not a promise of immediate scheduling.
+
+REST mode now covers build submission/status and Stop/Resume/Delete scheduler
+operations, as well as worker submission, queue monitoring and cluster status.
+SSH still transfers files and reads private results. Lifecycle scripts request
+fresh queue snapshots through the local HTTP bridge rather than silently using
+SSH scheduler commands. API cancellation errors are checked even when HTTP itself
+succeeds. Independent API reads no longer serialize behind one global cache lock.
+The v0.0.40 distribution field cannot be parsed by datalab's server; single-task,
+single-node submissions omit that redundant field rather than send an ignored
+placement setting. Source builds translate SLURM duration syntax to API minutes.

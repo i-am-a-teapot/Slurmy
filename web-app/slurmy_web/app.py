@@ -688,6 +688,23 @@ def create_app():
                  for path in sorted(root.iterdir()) if path.is_dir() and (path / 'Makefile').is_file()]
         return jsonify(workflows=items)
 
+    @app.get('/api/problem-sources')
+    def problem_sources():
+        path = directory()
+        data = workflows.decisions(path, check_paths=False)
+        globs = list(data.get('globs') or [])
+        if not globs and (path/'jobpairs.csv').is_file():
+            for row in workflows.imported_rows(path/'jobpairs.csv', check_paths=False):
+                value = row['problem']
+                if value.startswith('tptp:'):
+                    from slurmy_archives import tptp_collection_root
+                    collection = tptp_collection_root(value[5:])
+                    if collection:
+                        version = Path(collection).name if Path(collection).name.startswith('TPTP-') else 'TPTP-v9.2.1'
+                        value = 'tptp://' + version + '/' + str(Path(value[5:]).relative_to(collection))
+                globs.append(value)
+        return jsonify(globs=list(dict.fromkeys(globs)))
+
     @app.get('/api/limiter-configuration')
     def limiter_configuration():
         return jsonify(workflows.copyable_limiter_configuration(directory()))
@@ -900,9 +917,10 @@ def create_app():
         data = request.get_json()
         if data.get('kind') == 'glob':
             if data.get('role') == 'axiom':
-                pattern = str(workflows.path_at(data.get('value'), workflows.BASE))
-                from slurmy_archives import expand_axiom_pattern
-                matches = [str(path) for path, _ in expand_axiom_pattern(pattern, materialize=False)]
+                value = data.get('value', '')
+                pattern = value if value.startswith('tptp://') else str(workflows.path_at(value, workflows.BASE))
+                from slurmy_archives import expand_axiom_source
+                matches = [str(path) for path, _ in expand_axiom_source(pattern, host(), materialize=False)]
             else:
                 pattern, matches = workflows.problem_glob(data.get('value'), materialize=False, host=host())
             return jsonify(path=pattern, count=len(matches), sample=matches[:5])

@@ -3,6 +3,7 @@ if(document.body.dataset.page==='new'){
  const form=$('#builder');let step=0;const initial=JSON.parse($('#builder-initial').textContent||'{}');const context=$('#builder-context');const editing=context?.dataset.editing==='true';
  const repoRoot=document.body.dataset.repoRoot;
  let coreTopologyState=null;
+ if(!editing&&!initial.mode)initial.mode='interactive';
  const sections=[...form.querySelectorAll('[data-step]')];
  const pendingWork=new Map();let workTimer=null;
  function showWork(){const panel=$('#builder-progress');if(!pendingWork.size){panel.hidden=true;if(workTimer){clearInterval(workTimer);workTimer=null;}return;}const latest=[...pendingWork.values()].at(-1);panel.hidden=false;if($('#builder-progress-message').textContent!==latest.message)text('#builder-progress-message',latest.message);const bar=$('#builder-progress-bar'),detail=$('#builder-progress-detail');bar.hidden=!latest.total;if(latest.total){bar.value=Math.min(100,latest.completed/latest.total*100);detail.textContent=latest.unit==='bytes'?`${memory(latest.completed)} / ${memory(latest.total)} · ${Math.floor(bar.value)}%`:`${latest.completed.toLocaleString()} / ${latest.total.toLocaleString()} · ${Math.floor(bar.value)}%`;}else detail.textContent=latest.detail||'';text('#builder-progress-time',`${Math.floor((Date.now()-latest.started)/1000)}s elapsed`);if(!workTimer)workTimer=setInterval(showWork,1000);}
@@ -69,6 +70,22 @@ if(document.body.dataset.page==='new'){
  });
  copySolver.addEventListener('change',()=>{const choice=copySolver.value?copyChoices[Number(copySolver.value)]:null;copyConfirm.disabled=!choice;if(choice)highlightShell(copyPreview,`${choice.command}\nRoot: ${choice.solver_directory}\nLimits: ${choice.cpu_limit}s CPU, ${choice.wc_limit}s wall, ${choice.mem_limit}, ${choice.cores} core(s), ${choice.threads_per_core||1} thread(s)/core\nBuild: ${choice.build_mode==='script'?choice.build_script:'none'}`);else copyPreview.textContent='Choose a solver configuration to preview it.';});
  copyConfirm.addEventListener('click',()=>{const choice=copyChoices[Number(copySolver.value)];if(!copySolver.value||!choice)return;const card=add('configuration-template','configurations');fill(card,choice);$('#builder-error').hidden=true;visibility();copyDialog.close();card.scrollIntoView({behavior:'smooth',block:'center'});for(const input of card.querySelectorAll('[data-path]'))if(input.value.trim())validatePath(input);});
+ const problemsDialog=$('#copy-problems-dialog'),problemsWorkflow=$('#copy-problems-workflow'),problemsConfirm=$('#confirm-copy-problems');
+ let problemChoices=[],problemsRequest=0;
+ $('#close-copy-problems').addEventListener('click',()=>{++problemsRequest;problemsDialog.close();});
+ $('#copy-problems').addEventListener('click',async()=>{
+  ++problemsRequest;problemChoices=[];problemsConfirm.disabled=true;problemsDialog.showModal();problemsWorkflow.replaceChildren(el('option','Loading workflows…'));
+  try{const data=await api('/api/solver-configurations?'+params({}));problemsWorkflow.replaceChildren(el('option','Choose a workflow…'));problemsWorkflow.firstChild.value='';for(const item of data.workflows){const option=el('option',`${item.group} · ${item.name}`);option.value=item.directory;problemsWorkflow.append(option);}}
+  catch(error){text('#copy-problems-error',error.message);$('#copy-problems-error').hidden=false;}
+ });
+ problemsWorkflow.addEventListener('change',async()=>{
+  const request=++problemsRequest;problemChoices=[];problemsConfirm.disabled=true;$('#copy-problems-error').hidden=true;
+  if(!problemsWorkflow.value){text('#copy-problems-preview','Select a workflow to see its problem sources.');return;}
+  text('#copy-problems-preview','Loading problem sources…');
+  try{const data=await api('/api/problem-sources?'+params({directory:problemsWorkflow.value}));if(request!==problemsRequest)return;problemChoices=data.globs||[];text('#copy-problems-preview',problemChoices.join('\n')||'This workflow has no problem sources.');problemsConfirm.disabled=!problemChoices.length;}
+  catch(error){if(request!==problemsRequest)return;text('#copy-problems-error',error.message);$('#copy-problems-error').hidden=false;}
+ });
+ problemsConfirm.addEventListener('click',()=>{const existing=new Set([...document.querySelectorAll('[name="glob"]')].map(input=>input.value.trim()));for(const glob of problemChoices)if(!existing.has(glob)){const row=add('glob-template','globs');fill(row,{glob});existing.add(glob);validatePath($('[name="glob"]',row));}problemsDialog.close();updateProblemStatus();});
  const limiterDialog=$('#copy-limiter-dialog'),limiterWorkflow=$('#copy-limiter-workflow'),limiterPreview=$('#copy-limiter-preview'),limiterConfirm=$('#confirm-copy-limiter');
  let limiterChoice=null,limiterRequest=0;
  function limiterCopyError(message){text('#copy-limiter-error',message);$('#copy-limiter-error').hidden=!message;}
@@ -87,19 +104,21 @@ if(document.body.dataset.page==='new'){
  if(!limiterLoaded)addResource('limiter',editing?null:{root:`${repoRoot}/implementation/build/runsolver`,mode:'none',build_policy:'changed',script:`${repoRoot}/implementation/build/runsolver/build.sh`,artifact:'runsolver',source:`${repoRoot}/implementation/build/runsolver/source`});
  $('[name="axiom_mode"]').value=initial.axiom_globs?.length?'custom':'cluster';
  prefillExamples(form);
- const picker=$('#path-browser'),browserLocationKey='slurmy-last-browser-directory';let pickedInput=null,pickerDirectory='',pickedPathCallback=null,browseRequest=0,remoteBrowser=false;
+ const picker=$('#path-browser'),browserLocationKey='slurmy-last-browser-directory';let pickedInput=null,pickerDirectory='',pickedPathCallback=null,browseRequest=0,remoteBrowser=false,pendingDirectory=null;
  let localDirectory='';const remoteDirectories=new Map();
  try{localDirectory=localStorage.getItem(browserLocationKey)||'';}catch{}
  if(!localDirectory.startsWith('/'))localDirectory='';
  async function browse(directory,fallback=true){
+  if(directory===pendingDirectory)return;pendingDirectory=directory;
   const request=++browseRequest;const remote=remoteBrowser,selectedHost=rootValue('host');
   $('#path-items').replaceChildren();$('#path-select-directory').disabled=true;$('#path-parent').disabled=true;text('#path-help',remote?'Loading cluster directories…':'Loading local directories…');
-  $('#path-browser h2').textContent=remoteBrowser?`Choose Cluster TPTP Problems (${rootValue('host')})`:'Choose a Local Path';$('#path-select-directory').textContent=remoteBrowser?'Use this directory as a problem glob':'Choose this directory';
+  $('#path-browser h2').textContent=remoteBrowser?`Choose Cluster TPTP ${pickedInput?.name==='axiom_glob'?'Axioms':'Problems'} (${rootValue('host')})`:'Choose a Local Path';$('#path-select-directory').textContent=remoteBrowser?'Use this directory as a glob':'Choose this directory';
   try{if(!remote&&directory.startsWith('tptp://'))throw new Error('This browser shows local files. Use Browse cluster TPTP for tptp:// paths.');
-   const data=await api(remote?'/api/browse-tptp':'/api/browse-path',{directory,host:selectedHost});if(request!==browseRequest)return;pickerDirectory=data.directory;if(remote)remoteDirectories.set(selectedHost,pickerDirectory);else{localDirectory=pickerDirectory;try{localStorage.setItem(browserLocationKey,localDirectory);}catch{}}$('#path-select-directory').disabled=remote&&pickerDirectory==='tptp://';$('#path-parent').disabled=false;$('#path-location').value=data.directory;const ancestors=$('#path-ancestors');ancestors.replaceChildren();let current=data.directory;while(true){const ancestor=current;ancestors.append(button(ancestor,()=>{closeAncestors();browse(ancestor);},'path-ancestor'));if(current===(remoteBrowser?'tptp://':'/'))break;current=remoteBrowser?(current.slice(8).includes('/')?current.replace(/\/[^/]+$/,''):'tptp://'):(current.replace(/\/[^/]+$/,'')||'/');}closeAncestors();const items=$('#path-items');items.replaceChildren();
+   const data=await api(remote?'/api/browse-tptp':'/api/browse-path',{directory,host:selectedHost});if(request!==browseRequest)return;pickerDirectory=data.directory;if(remote)remoteDirectories.set(selectedHost+':'+pickedInput?.name,pickerDirectory);else{localDirectory=pickerDirectory;try{localStorage.setItem(browserLocationKey,localDirectory);}catch{}}$('#path-select-directory').disabled=remote&&pickerDirectory==='tptp://';$('#path-parent').disabled=false;$('#path-location').value=data.directory;const ancestors=$('#path-ancestors');ancestors.replaceChildren();let current=data.directory;while(true){const ancestor=current;ancestors.append(button(ancestor,()=>{closeAncestors();browse(ancestor);},'path-ancestor'));if(current===(remoteBrowser?'tptp://':'/'))break;current=remoteBrowser?(current.slice(8).includes('/')?current.replace(/\/[^/]+$/,''):'tptp://'):(current.replace(/\/[^/]+$/,'')||'/');}closeAncestors();const items=$('#path-items');items.replaceChildren();
    for(const item of data.items){const selectable=item.directory||pickedInput?.dataset.path==='file'||pickedInput?.dataset.path==='glob';const row=button(`${item.directory?'📁':'📄'}  ${item.name}`,()=>{if(item.directory)browse(item.path);else if(selectable){pickedInput.value=item.path;picker.close();if(pickedPathCallback){const callback=pickedPathCallback;pickedPathCallback=null;callback(item.path);}else validatePath(pickedInput);}},'path-item');row.disabled=!selectable;items.append(row);}
    text('#path-help',data.truncated?'Showing the first 1,000 entries (folders and archives first). Type a more specific directory above.':pickedInput?.dataset.path==='file'?'Open folders or choose a file.':pickedInput?.dataset.path==='glob'?'Choose a file or open a folder to select a path pattern.':'Open folders, then choose the current directory.');$('#path-parent').dataset.path=data.parent;
   }catch(error){if(request!==browseRequest)return;if(fallback&&directory)browse(remoteBrowser?'tptp://':'',false);else text('#path-help',error.message);}
+  finally{if(request===browseRequest)pendingDirectory=null;}
  }
  function closeAncestors(){const menu=$('#path-ancestors');menu.hidden=true;$('#path-ancestors-toggle').setAttribute('aria-expanded','false');$('#path-location').setAttribute('aria-expanded','false');}
  function setupBrowsers(root){root.querySelectorAll('[data-path]').forEach(input=>{if(input.dataset.browserReady)return;input.dataset.browserReady='true';const choose=button('Browse…',()=>{pickedInput=input;const current=input.value.trim();remoteBrowser=false;let start=current.startsWith('tptp://')?'':current;
@@ -111,12 +130,12 @@ if(document.body.dataset.page==='new'){
    }
    if(input.dataset.path==='file')start=current.replace(/\/[^/]*$/,'');
    $('#path-select-directory').hidden=input.dataset.path==='file';picker.showModal();browse((current!==input.placeholder&&start.startsWith('/')?start:'')||localDirectory);},'secondary path-browse');
-   const row=el('div',undefined,'path-input-row');input.replaceWith(row);row.append(input,choose);if(input.name==='glob')row.append(button('Browse cluster TPTP…',()=>{pickedInput=input;remoteBrowser=true;$('#path-select-directory').hidden=false;picker.showModal();const value=input.value.trim();const prefix=value.startsWith('tptp://')?value.split(/[?*\[]/,1)[0].replace(/\/$/,''):'';const start=prefix&&prefix!=='tptp:/'?(prefix.endsWith('.p')||prefix.endsWith('.tptp')?prefix.replace(/\/[^/]*$/,''):prefix):'';browse(start||remoteDirectories.get(rootValue('host'))||`tptp://${document.body.dataset.tptpVersion}/Problems`);},'secondary path-browse'));
+   const row=el('div',undefined,'path-input-row');input.replaceWith(row);row.append(input,choose);if(['glob','axiom_glob'].includes(input.name))row.append(button('Browse cluster TPTP…',()=>{pickedInput=input;remoteBrowser=true;$('#path-select-directory').hidden=false;picker.showModal();const value=input.value.trim();const prefix=value.startsWith('tptp://')?value.split(/[?*\[]/,1)[0].replace(/\/$/,''):'';const start=prefix&&prefix!=='tptp:/'?(prefix.endsWith('.p')||prefix.endsWith('.tptp')||prefix.endsWith('.ax')?prefix.replace(/\/[^/]*$/,''):prefix):'';browse(start||remoteDirectories.get(rootValue('host')+':'+input.name)||`tptp://${document.body.dataset.tptpVersion}/${input.name==='axiom_glob'?'Axioms':'Problems'}`);},'secondary path-browse'));
  });}
  setupBrowsers(form);
- picker.addEventListener('close',()=>{++browseRequest;pickedPathCallback=null;});
+ picker.addEventListener('close',()=>{++browseRequest;pendingDirectory=null;pickedPathCallback=null;});
  picker.addEventListener('click',event=>{if(!event.target.closest('.path-combobox'))closeAncestors();});
- $('#path-parent').addEventListener('click',()=>browse($('#path-parent').dataset.path));$('#path-ancestors-toggle').addEventListener('click',()=>{const menu=$('#path-ancestors');menu.hidden=!menu.hidden;const expanded=String(!menu.hidden);$('#path-ancestors-toggle').setAttribute('aria-expanded',expanded);$('#path-location').setAttribute('aria-expanded',expanded);});$('#path-go').addEventListener('click',()=>{closeAncestors();browse($('#path-location').value);});$('#path-location').addEventListener('keydown',event=>{if(event.key==='Enter'){event.preventDefault();closeAncestors();browse(event.target.value);}else if(event.key==='Escape')closeAncestors();});
+ $('#path-parent').addEventListener('click',()=>browse($('#path-parent').dataset.path));$('#path-ancestors-toggle').addEventListener('click',()=>{const menu=$('#path-ancestors');menu.hidden=!menu.hidden;const expanded=String(!menu.hidden);$('#path-ancestors-toggle').setAttribute('aria-expanded',expanded);$('#path-location').setAttribute('aria-expanded',expanded);});$('#path-location').addEventListener('blur',event=>{if(picker.open&&event.target.value.trim()!==pickerDirectory){closeAncestors();browse(event.target.value.trim(),false);}});$('#path-location').addEventListener('keydown',event=>{if(event.key==='Enter'){event.preventDefault();closeAncestors();browse(event.target.value,false);}else if(event.key==='Escape')closeAncestors();});
  $('#path-select-directory').addEventListener('click',()=>{if(!pickedInput)return;const kind=pickedInput.dataset.path;if(kind==='file')return;pickedInput.value=(pickerDirectory==='/'?'':pickerDirectory.replace(/\/$/,''))+(kind==='glob'?(pickedInput.name==='axiom_glob'?'/**/*.ax':'/**/*.p'):'');picker.close();validatePath(pickedInput);});
  $('#limiter-browse').addEventListener('click',()=>{const invocation=$('[name="limiter"]');const current=invocation.value.trim()||invocation.placeholder;const first=current.match(/^(?:'[^']*'|"[^"]*"|\S+)/)?.[0]||'';remoteBrowser=false;const binary=first.replace(/^['"]|['"]$/g,'');pickedInput={dataset:{path:'file'},value:binary};pickedPathCallback=path=>{const rest=current.slice(first.length).trimStart();const quoted="'"+path.replace(/'/g,"'\\''")+"'";invocation.value=quoted+(rest?' '+rest:'');invocation.refreshShell?.();updateLimiterStatus();};$('#path-select-directory').hidden=true;picker.showModal();browse((binary.startsWith('/')?binary.replace(/\/[^/]*$/,''):'')||localDirectory);});
  // Repeated card fields are read from their card, never from a flattened form.
@@ -274,8 +293,7 @@ if(document.body.dataset.page==='new'){
   const pathReady=name=>{const input=card.querySelector(`[name="${name}"]`);return input.value.trim()&&input.dataset.validated===input.value;};
   const root=value('solver_directory');
   const runtimeReady=root.startsWith('/')&&!root.includes('/path/to/')&&pathReady('solver_directory')&&
-   value('command')&&value('command')!==card.querySelector('[name="command"]').placeholder&&
-   !/^\.\/solver(?:\s|$)/.test(value('command'));
+   value('command')&&value('command')!==card.querySelector('[name="command"]').placeholder;
   const buildReady=!buildSelected||((!value('build_source')||pathReady('build_source'))&&pathReady('build_script'));
   const positive=name=>{const input=card.querySelector(`[name="${name}"]`);return input.value.trim()!==''&&input.validity.valid&&Number(input.value)>0;};
   const limitsReady=card.querySelector('[name="threads_per_core"]').dataset.threadValid==='true'&&['wc_limit','cpu_limit'].every(name=>/^(0|[1-9][0-9]*)$/.test(value(name)))&&positive('threads_per_core')&&positive('cores')&&card.querySelector('[name="cores"]').dataset.coreValid==='true'&&
@@ -312,25 +330,41 @@ if(document.body.dataset.page==='new'){
  const batchInput=form.querySelector('[name="batch_size"]');
  let automaticBatch=!initial.batch_size,batchRequest=0,batchTimer=null,lastBatchSuggestion=null;
  let acceptedBatchWarning=null,batchFitCheck=null;
+ const batchDialog=$('#batch-explanation-dialog');let lastBatchPlan=null;
+ $('#close-batch-explanation').addEventListener('click',()=>batchDialog.close());
+ $('#explain-batch-suggestion').addEventListener('click',async()=>{batchDialog.showModal();if(!lastBatchPlan)await suggestBatchSize();if(lastBatchPlan)renderBatchExplanation(lastBatchPlan);else text('#batch-explanation-content','The calculation is unavailable. Complete the solver and problem settings, then try again.');});
+ function renderBatchExplanation(data){
+  const content=$('#batch-explanation-content');content.replaceChildren();
+  const flow=el('div',undefined,'batch-math-flow');content.append(flow);
+  function card(title,formula,explanation){const node=el('article',undefined,'batch-math-card');node.append(el('h3',title),el('p',formula,'batch-formula'),el('p',explanation));flow.append(node);return node;}
+  card('1. Count the Work',`${data.total_pairs.toLocaleString()} solver-problem pairs`,`${data.configuration_count} solver configuration${data.configuration_count===1?'':'s'} × ${data.problem_count===null?'the explicitly selected problems':data.problem_count.toLocaleString()+' distinct problems'}. Overlapping problem sources are counted only once.`);
+  const hardware=card('2. Find Parallel Capacity',`min(${data.hardware_parallelism}, ${data.workflow_submit_limit}, 50) = ${data.maximum_parallelism}`,`${data.node_count} nodes are available in this partition. Below is the capacity calculation for each solver’s core and placement settings. Use the smallest capacity, capped by your workflow limit and 50. This counts total capacity, not currently idle nodes.`);
+  const details=el('ul');data.configuration_parallelism.forEach((count,index)=>details.append(el('li',`${data.configuration_names[index]}: ${data.capacity_breakdown?.[index]?.map(group=>`${group.nodes} nodes × ${group.formula}`).join(' + ')||'node capacity'} = ${count.toLocaleString()} parallel batches`)));hardware.append(details);
+  card('3. Aim for Two Waves',`ceil(${data.total_pairs.toLocaleString()} ÷ (2 × ${data.maximum_parallelism})) = ${data.balance_batch_size}`,`Two waves let a free slot pick up another batch as work finishes, instead of leaving one large batch running alone at the end. This is a starting estimate: solver-problem pairs can take very different amounts of time.`);
+  card('4. Fit the Submission Window',data.fit_batch_size?`At least ${data.fit_batch_size} ${data.fit_batch_size===1?'pair':'pairs'} per batch`:'No batch size fits immediately',`The account allows 50 running or pending tasks. ${data.account_active_tasks===null?'Current account usage is unknown; we assume 50 free slots for this estimate.':`${data.account_active_tasks} are currently submitted, leaving ${data.account_free_slots} slots.`} Your workflow limit is ${data.workflow_submit_limit}; the usable window is ${data.submission_budget}. Solver ordering and placement require ${data.minimum_batches} separate group${data.minimum_batches===1?'':'s'}. We find the smallest size for which the sum of ceil(group pairs ÷ batch size) fits that window.`);
+  card('5. Use the Larger Size',data.fit_batch_size?`max(${data.balance_batch_size}, ${data.fit_batch_size}) = ${data.batch_size}`:`Use ${data.batch_size} as the balancing estimate`,`${data.suggested_batches} ${data.suggested_batches===1?'batch':'batches'} will be created at this size. ${data.suggested_fits?'They fit the current submission window.':'Some batches must wait; keep the local server running until all batches are accepted.'} Each batch runs its pairs sequentially; different batches may run in parallel.`);
+  const picture=el('div',undefined,'batch-window-picture');picture.setAttribute('aria-label',`${data.suggested_batches} suggested batches; ${data.submission_budget} available submission slots`);
+  const shown=Math.min(data.suggested_batches,100);for(let i=0;i<shown;i++){const square=el('span',String(i+1),i<data.submission_budget?'batch-slot fits':'batch-slot waits');square.title=`Batch ${i+1}: ${i<data.submission_budget?'fits the current submission window':'must wait for a free submission slot'}`;picture.append(square);}content.append(picture,el('p','Each numbered box is one SLURM batch.'+(data.suggested_batches>100?' Only the first 100 are shown.':'')+' Account usage can change after this calculation.','muted'));
+ }
  async function suggestBatchSize(){
   const request=++batchRequest, status=$('#batch-suggestion'), use=$('#use-batch-suggestion');
   status.className='validation';status.textContent='Checking partition nodes and counting solver-problem pairs…';use.hidden=true;
   try{
    const data=await api('/api/suggest-batch-size',payload());
    if(request!==batchRequest)return;
-   lastBatchSuggestion=data.batch_size;
+   lastBatchSuggestion=data.batch_size;lastBatchPlan=data;renderBatchExplanation(data);
    if(automaticBatch)batchInput.value=data.batch_size;
    status.className='validation valid';
-   status.textContent=`Suggested: ${data.batch_size} = ceil(${data.total_pairs.toLocaleString()} pairs ÷ (2 × ${data.maximum_parallelism} parallel tasks)). ${data.node_count} partition nodes; hardware capacity ${data.hardware_parallelism} tasks, using the least parallel configuration and capped by maximum outstanding tasks. Based on total capacity, not current availability.`;
+   status.textContent=`Suggested: ${data.batch_size} ${data.batch_size===1?'pair':'pairs'} per batch · ${data.suggested_batches} ${data.suggested_batches===1?'batch':'batches'}. ${data.suggested_fits?'Fits the current submission window.':'Some batches will need to wait.'}`;
    use.hidden=automaticBatch||Number(batchInput.value)===data.batch_size;
    updateStepStates();
-  }catch(error){if(request!==batchRequest)return;lastBatchSuggestion=null;status.className='validation invalid';status.textContent=`Could not suggest a batch size: ${error.message} You can enter a size manually.`;}
+  }catch(error){if(request!==batchRequest)return;lastBatchSuggestion=null;lastBatchPlan=null;status.className='validation invalid';status.textContent=`Could not suggest a batch size: ${error.message} You can enter a size manually.`;}
  }
  batchInput.addEventListener('input',()=>{automaticBatch=!batchInput.value;$('#use-batch-suggestion').hidden=lastBatchSuggestion===null||Number(batchInput.value)===lastBatchSuggestion;if(automaticBatch&&step===4)suggestBatchSize();});
  $('#use-batch-suggestion').addEventListener('click',()=>{if(lastBatchSuggestion!==null){automaticBatch=true;batchInput.value=lastBatchSuggestion;$('#use-batch-suggestion').hidden=true;updateStepStates();}});
  form.addEventListener('input',event=>{
   if(event.target===batchInput)return;
-  ++batchRequest;lastBatchSuggestion=null;clearTimeout(batchTimer);
+  ++batchRequest;lastBatchSuggestion=null;lastBatchPlan=null;clearTimeout(batchTimer);
   if(step===4)batchTimer=setTimeout(suggestBatchSize,400);
  });
  form.addEventListener('change',event=>{if(event.target!==batchInput&&step===4){++batchRequest;clearTimeout(batchTimer);batchTimer=setTimeout(suggestBatchSize,400);}});
@@ -356,7 +390,7 @@ if(document.body.dataset.page==='new'){
   if(signature!==JSON.stringify(payload()))return checkSubmissionFitNow();
   if(plan.estimated_batches<=plan.submission_budget)return;
   const recommendation=plan.recommended_batch_size;
-  const explanation=`This workflow creates approximately ${plan.estimated_batches} batches. Datalab permits at most 50 submitted SLURM tasks per user, including pending tasks and tasks outside Slurmy. Your outstanding-task setting is ${current.max_outstanding}.${plan.account_active_tasks!==null?` Your account currently has ${plan.account_active_tasks} active/pending tasks, leaving ${plan.account_free_slots} slots.`:''} Keep this computer awake and the local server running until the final batch is accepted; already submitted tasks continue if you disconnect. `+(recommendation?`Use ${recommendation} solver-problem pairs per batch to create ${plan.recommended_batches} ${plan.recommended_batches===1?'batch':'batches'}, fitting within the current submission window and below 50 given the currently available account slots. Other submissions can change availability.`:`${plan.submission_budget===0?'Your account currently has no free submission slots; even a single batch must wait. ':''}At least ${plan.minimum_batches} separate batches are required by the solver ordering and resource settings. Increasing batch size alone cannot fit them into the current ${plan.submission_budget}-task window. Adjust the ordering, configurations, or outstanding-task setting, or allow local submission to wait.`);
+  const explanation=`This workflow creates approximately ${plan.estimated_batches} batches. Datalab permits at most 50 submitted SLURM tasks per user, including pending tasks and tasks outside Slurmy. Your submitted-task setting is ${current.max_outstanding}.${plan.account_active_tasks!==null?` Your account currently has ${plan.account_active_tasks} active/pending tasks, leaving ${plan.account_free_slots} slots.`:''} Keep this computer awake and the local server running until the final batch is accepted; already submitted tasks continue if you disconnect. `+(recommendation?`Use ${recommendation} solver-problem pairs per batch to create ${plan.recommended_batches} ${plan.recommended_batches===1?'batch':'batches'}, fitting within the current submission window and within 50 given the currently available account slots. Other submissions can change availability.`:`${plan.submission_budget===0?'Your account currently has no free submission slots; even a single batch must wait. ':''}At least ${plan.minimum_batches} separate batches are required by the solver ordering and resource settings. Increasing batch size alone cannot fit them into the current ${plan.submission_budget}-task window. Adjust the ordering, configurations, or submitted-task setting, or allow local submission to wait.`);
   const choice=await SlurmyDialog.choose({title:'Some Batches Will Need to Wait',message:explanation,choices:[...(recommendation?[{value:'use',label:`Use Batch Size ${recommendation}`}]:[]),{value:'keep',label:'Keep Batch Size',secondary:true}]});
   if(!choice)throw new Error('Review the batch size before continuing.');
   if(choice==='use'){batchInput.value=recommendation;automaticBatch=false;updateStepStates();}

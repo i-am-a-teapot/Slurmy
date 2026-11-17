@@ -7,6 +7,7 @@ import sys
 from pathlib import Path
 sys.path.insert(0,str(Path(__file__).resolve().parent.parent))
 from ssh_transport import connection_options
+import slurm_api
 
 
 import argparse
@@ -251,11 +252,23 @@ def execute_build(args: argparse.Namespace) -> None:
 
         run(["ssh", *connection_options(), "-T", "-o", "BatchMode=yes", "-o", "ConnectTimeout=10", "--", args.host, "bash", "-s", "--", build_id], input_text=REMOTE_PREPARE)
         run(["scp", *connection_options(), "-q", "-o", "BatchMode=yes", "-o", "ConnectTimeout=10", "--", *(str(path) for path in staging.iterdir()), f"{args.host}:slurmy/builds/.staging-{build_id}/"])
-        submitted = run(
-            ["ssh", *connection_options(), "-T", "-o", "BatchMode=yes", "-o", "ConnectTimeout=10", "--", args.host, "bash", "-s", "--", build_id],
-            input_text=REMOTE_SUBMIT,
-            capture=True,
-        )
+        if slurm_api.enabled(args.host):
+            # Publish files over SSH; submit and poll the build through REST.
+            published = run(["ssh", *connection_options(), "-T", "-o", "BatchMode=yes", "-o", "ConnectTimeout=10", "--", args.host, "bash", "-s", "--", build_id],
+                input_text=REMOTE_SUBMIT.replace('sbatch --parsable job.sh', "python3 -c 'import json,os;print(json.dumps(dict(os.environ)))'"), capture=True)
+            environment=json.loads(published.stdout)
+            home=slurm_api.credentials(args.host)['home']
+            options=[line[len('#SBATCH '):] for line in job_script.read_text().splitlines() if line.startswith('#SBATCH ')]
+            payload=slurm_api.batch_request(options,job_script.read_text(),home+'/slurmy/builds/'+build_id,environment)
+            response=slurm_api.request(args.host,'job/submit','POST',payload)
+            identifier=response.get('job_id') or response.get('result',{}).get('job_id')
+            submitted=subprocess.CompletedProcess([],0,str(identifier))
+        else:
+            submitted = run(
+                ["ssh", *connection_options(), "-T", "-o", "BatchMode=yes", "-o", "ConnectTimeout=10", "--", args.host, "bash", "-s", "--", build_id],
+                input_text=REMOTE_SUBMIT,
+                capture=True,
+            )
 
     job_id = submitted.stdout.strip().split(";", 1)[0]
     if not job_id.isdigit():
@@ -266,12 +279,18 @@ def execute_build(args: argparse.Namespace) -> None:
     missed_polls = 0
     while True:
         try:
-            state_result = run(
-                ["ssh", *connection_options(), "-T", "-o", "BatchMode=yes", "-o", "ConnectTimeout=10", "--", args.host, "bash", "-s", "--", job_id],
-                input_text=REMOTE_STATE,
-                capture=True,
-            )
-        except BuildError:
+            if slurm_api.enabled(args.host):
+                rows=slurm_api.request(args.host,'job/'+job_id).get('jobs',[])
+                if not rows:raise BuildError('Build status is unavailable from the SLURM API.')
+                state_result=subprocess.CompletedProcess([],0,'+'.join(rows[0]['job_state']))
+            else:
+                state_result = run(
+                    ["ssh", *connection_options(), "-T", "-o", "BatchMode=yes", "-o", "ConnectTimeout=10", "--", args.host, "bash", "-s", "--", job_id],
+                    input_text=REMOTE_STATE,
+                    capture=True,
+                )
+
+        except (BuildError, RuntimeError):
             missed_polls += 1
             if missed_polls >= 10:
                 raise
@@ -301,7 +320,7 @@ def execute_build(args: argparse.Namespace) -> None:
     output.mkdir(parents=True, exist_ok=True)
     try:
         args._inputs_unchanged = input_fingerprint(args) == getattr(args, '_initial_fingerprint', None)
-    except (BuildError, OSError):
+    except (BuildError, OSError, RuntimeError):
         args._inputs_unchanged = False
     run(["rsync", "-a", "--delay-updates", "--partial-dir=.rsync-partial", "-e", shlex.join(["ssh", *connection_options(), "-o", "BatchMode=yes", "-o", "ConnectTimeout=10"]), "--", f"{args.host}:slurmy/builds/{build_id}/output/", f"{output}/"])
     for artifact in args.artifact:
@@ -411,7 +430,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         raise SystemExit("--poll-interval must be at least 0.2 seconds")
     try:
         cached_build(args)
-    except (BuildError, OSError, tarfile.TarError) as exc:
+    except (BuildError, OSError, RuntimeError, tarfile.TarError) as exc:
         print(f"Slurmy build: {exc}", file=sys.stderr)
         return 1
     return 0

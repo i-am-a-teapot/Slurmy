@@ -63,6 +63,23 @@ class PortableWorkflowTests(unittest.TestCase):
         script=(imported/'submit.sh.files/calls/0/solver.sh').read_text()
         self.assertNotIn('--cpu-limit',script);self.assertNotIn('--wall=',script);self.assertNotIn('--mem=',script)
 
+    def test_shared_custom_axioms_are_materialized_in_portable_bundle(self):
+        remote=Path('tptp:/share/datasets/TPTP/TPTP-v9.2.1/Axioms/SYN001+0.ax')
+        (self.workflow/'axiom-globs.txt').write_text('tptp://TPTP-v9.2.1/Axioms/SYN001*.ax\n')
+        def fetch(*args,stdout,**kwargs):
+            with tarfile.open(fileobj=stdout,mode='w') as archive:
+                body=b'cnf(shared,axiom,p).';member=tarfile.TarInfo('assets'+str(remote)[5:]);member.size=len(body)
+                archive.addfile(member,io.BytesIO(body))
+            return type('Result',(),dict(returncode=0))()
+        with patch.object(portable,'read_axioms',return_value=([remote],{remote:Path('SYN001+0.ax')})),patch.object(portable.subprocess,'run',side_effect=fetch):
+            bundle=portable.export_bundle(self.workflow,'test-host')
+        self.addCleanup(bundle.close)
+        imported,_=portable.import_bundle(bundle,'custom-shared-axioms')
+        axioms=(imported/'axiom-globs.txt').read_text()
+        self.assertNotIn('tptp:',axioms)
+        self.assertTrue(Path(axioms.strip()).is_file())
+        self.assertEqual(Path(axioms.strip()).read_text(),'cnf(shared,axiom,p).')
+
     def test_computer_information_setting_survives_portable_round_trip(self):
         with (self.workflow/'Makefile').open('a') as output:
             output.write('GET_COMPUTER_INFO := false\n')

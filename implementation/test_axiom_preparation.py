@@ -28,6 +28,24 @@ class AxiomPreparationTests(unittest.TestCase):
             self.assertIn('exec python3', (assets/'prepare_axioms.sh').read_text())
             self.assertNotIn('cp --', (assets/'prepare_axioms.sh').read_text())
 
+    def test_shared_axioms_are_read_directly_and_not_packaged_as_local_files(self):
+        import shutil
+        from slurmy import generate
+        import test_batching
+        source=Path('tptp:/share/datasets/TPTP/TPTP-v9.2.1/Axioms/SYN001+0.ax')
+        with tempfile.TemporaryDirectory() as folder:
+            root=Path(folder);assets=test_batching.SequentialBatchTests().prepare(root,[(False,False)],1)
+            shutil.rmtree(assets);(root/'submit.sh').unlink()
+            with patch('slurmy.read_axioms',return_value=([source],{source:Path('SYN001+0.ax')})):
+                generate(root/'jobpairs.csv',root/'building.txt',root/'limiter.txt')
+            self.assertNotIn('tptp:',(assets/'archive-paths.txt').read_text())
+            self.assertEqual(json.loads((assets/'axiom-paths.json').read_text()),[[str(source),'SYN001+0.ax']])
+            def copy(source,target):
+                self.assertEqual(str(source),'/share/datasets/TPTP/TPTP-v9.2.1/Axioms/SYN001+0.ax')
+                target.write_text('shared axiom')
+            with patch('prepare_axioms.shutil.copyfile',side_effect=copy):prepare(assets)
+            self.assertEqual((assets/'rootfs/.slurmy-tptp/Axioms/SYN001+0.ax').read_text(),'shared axiom')
+
     def test_large_set_exact_names_nested_paths_and_retry(self):
         with tempfile.TemporaryDirectory() as folder:
             job = Path(folder)

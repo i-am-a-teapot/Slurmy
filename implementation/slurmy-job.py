@@ -50,15 +50,7 @@ def main():
                'resume': 'Resuming unfinished solver-problem pairs; completed results are kept…',
                'delete': 'All tasks stopped. Deleting cluster job files…'}[action], flush=True)
         try:
-            if action == 'stop':
-                import slurm_api
-                if slurm_api.enabled(args.host):
-                    auth = slurm_api.credentials(args.host)
-                    directory = auth['home']+'/slurmy/jobs/'+args.job_id
-                    for item in slurm_api.active_jobs(args.host, max_age=0):
-                        if item.get('user_name') == auth['user'] and item.get('current_working_directory') == directory:
-                            slurm_api.request(args.host, 'job/'+slurm_api.job_id(item), 'DELETE')
-                    slurm_api._reads.clear()
+            import slurm_api
             with (tempfile.TemporaryFile() if action == 'resume' else (templates / f'remote_{action}.sh').open('rb')) as stream:
                 if action == 'resume':
                     if args.if_idle:
@@ -87,10 +79,13 @@ def main():
                     stream.seek(0)
                     try:
                         budget = [] if action == 'resume' else ['timeout', '--signal=TERM', '--kill-after=5', '120']
-                        result = subprocess.run(['ssh', *connection_options(), '-T', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=10', '--',
-                                                 args.host, *budget, 'env', '-u', 'BASH_ENV', '-u', 'ENV', 'bash', '--noprofile', '--norc', '-s', '--', args.job_id], stdin=stream, check=False, timeout=None if action == 'resume' else 180,
-                                                 stdout=subprocess.PIPE if action == 'resume' else None,
-                                                 text=True)
+                        if slurm_api.enabled(args.host):
+                            result = local_dispatch.remote_action(args.host, stream.read().decode(), [args.job_id], emit=action!='resume')
+                        else:
+                            result = subprocess.run(['ssh', *connection_options(), '-T', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=10', '--',
+                                                     args.host, *budget, 'env', '-u', 'BASH_ENV', '-u', 'ENV', 'bash', '--noprofile', '--norc', '-s', '--', args.job_id], stdin=stream, check=False, timeout=None if action == 'resume' else 180,
+                                                     stdout=subprocess.PIPE if action == 'resume' else None,
+                                                     text=True)
                         code = result.returncode
                         if action == 'resume':
                             resume_args = None
@@ -121,7 +116,7 @@ def main():
                     print(f'{reason}; retrying {action} ({attempt + 1}/{attempts})…', flush=True)
                     time.sleep(attempt)
         except (OSError, RuntimeError) as error:
-            print(f'Could not {action} job over SSH: {error}', file=sys.stderr)
+            print(f'Could not {action} job: {error}', file=sys.stderr)
             return 1
     if args.action == 'delete':
         if args.delete_local:

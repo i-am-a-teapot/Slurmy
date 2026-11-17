@@ -166,7 +166,7 @@ The solver-problem pairs can be run in problem major order, i.e., for each probl
 or solution major order, i.e., for each solver run all problems, or random order.
 The number of solver-problem pairs in each batch (that is run as one SLURM task) can be varied;
 a suggested value is provided.
-(Suggested explanation for review: By default, each Slurmy job may have at most 32 SLURM tasks pending or running simultaneously. As tasks finish, Slurmy submits more. This is a configurable submission window, not a limit on the total number of tasks or a fixed cluster limit. Concurrent Slurmy submissions under the same cluster account share available submission capacity.)
+(Suggested explanation for review: By default, each Slurmy job may have at most 50 SLURM tasks pending or running simultaneously. As tasks finish, Slurmy submits more. This is a configurable submission window, not a limit on the total number of tasks or a fixed cluster limit. Concurrent Slurmy submissions under the same cluster account share available submission capacity.)
 
 **Save the workflow settings:**
 This generates all the files and scripts that get used to execute a job based on the workflow.
@@ -242,16 +242,19 @@ Consolidated stdout/stderr archives and download statistics remain at the top
 level. `CONTENTS.txt` explains the layout. Existing verbose downloads are
 organized into this layout on their next download.
 
-The workflow editor suggests a batch size when you enter **SLURM settings**:
-`ceil(total solver-problem pairs / (2 × maximum parallelism))`, with a minimum
-of 1. It queries the selected partition's current node topology and counts the
-selected problem sources. Shared tasks fit by requested physical cores;
-dedicated CPU tasks consume whole sockets, and dedicated-node tasks consume a
-whole node. The estimate uses the least parallel solver configuration and is
-capped by the workflow's maximum outstanding SLURM tasks. It measures total
-CPU capacity rather than idle capacity; memory and other scheduling constraints
-can reduce actual parallelism. Saved values and manual overrides are retained;
-**Use suggested batch size** applies the freshly calculated value.
+The workflow editor suggests a batch size in **SLURM Settings**. It first aims for
+two waves of parallel batches: `ceil(total pairs / (2 × parallel batches))`.
+Parallel capacity uses the selected partition's sockets, physical cores, requested
+cores and dedicated-socket/node placement, capped by the workflow's submitted-task
+limit (default **50**) and the cluster's 50-task cap. This uses total capacity,
+not currently idle nodes; memory and scheduling constraints can reduce it.
+
+It then increases that size, if necessary, so the actual grouped batches fit the
+available submission window. It counts running/pending account tasks and keeps
+solver-order and placement boundaries when calculating batch counts. The field,
+submission warning and **?** explanation use this single suggestion. The **?**
+opens a visual, numbered explanation using the current values. Manual choices
+and saved values are retained until **Use suggested batch size** is selected.
 
 </blockquote>
 </details>

@@ -98,9 +98,10 @@ def export_bundle(directory, host):
     axiom_file = directory / 'axiom-globs.txt'
     axioms = []
     if axiom_file.is_file():
-        sources, destinations = read_axioms(axiom_file)
-        paths.update(sources)
-        axioms = [{'source': str(source), 'relative': str(destinations[source])} for source in sources]
+        sources, destinations = read_axioms(axiom_file, host=host)
+        paths.update(source for source in sources if not str(source).startswith('tptp:'))
+        remote.update(str(source)[5:] for source in sources if str(source).startswith('tptp:'))
+        axioms = [{'source': str(source)[5:] if str(source).startswith('tptp:') else str(source), 'relative': str(destinations[source])} for source in sources]
     local_includes = []
     if not axioms:
         for row in rows:
@@ -112,6 +113,8 @@ def export_bundle(directory, host):
     remote_roots = set()
     for problem in remote:
         root = tptp_collection_root(problem)
+        if not root and '/Axioms/' in problem:
+            root = tptp_collection_root(problem.replace('/Axioms/', '/Problems/', 1))
         if not root:
             raise ValueError('Unsupported shared problem path.')
         remote_roots.add(root)
@@ -121,7 +124,7 @@ def export_bundle(directory, host):
                    limiter=limiter, axioms=axioms, shared_roots=sorted(shared_roots), default_tptp_root=TPTP_DEFAULT_ROOT,
                    settings={key: data.get(key, default) for key, default in
                              [('host', host), ('partition', 'CPU-amd'), ('reservation', ''),
-                              ('batch_size', 1), ('max_outstanding', 32), ('get_computer_info', True)]})
+                              ('batch_size', 1), ('max_outstanding', 50), ('get_computer_info', True)]})
     payload['settings']['host'] = host
     output = tempfile.TemporaryFile()
     try:
@@ -316,7 +319,7 @@ def import_bundle(stream, name):
         if not isinstance(computer_info, bool):
             raise ValueError('Invalid computer information setting in workflow archive.')
         batch = workflows.positive(str(settings.get('batch_size', 1)), 'batch size')
-        maximum = workflows.positive(str(settings.get('max_outstanding', 32)), 'outstanding tasks')
+        maximum = workflows.positive(str(settings.get('max_outstanding', 50)), 'submitted tasks')
         pair_order = payload.get('pair_order') or 'solver-major'
         if pair_order not in workflows.PAIR_ORDERS:
             raise ValueError('Invalid solver-problem pair order in workflow archive.')

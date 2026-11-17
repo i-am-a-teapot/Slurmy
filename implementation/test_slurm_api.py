@@ -74,6 +74,34 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(job['memory_per_node'],dict(set=True,number=0))
         self.assertEqual(job['time_limit'],dict(infinite=True))
 
+    def test_build_time_formats_and_single_task_distribution(self):
+        self.assertEqual(api.time_minutes('00:05:00'),5)
+        self.assertEqual(api.time_minutes('2-03:04:05'),3065)
+        payload=api.batch_request(['--distribution=block:block','--nodes=1','--ntasks=1','--time=00:05:00','--error=build.log'], 'true','/tmp',{})
+        self.assertNotIn('distribution',payload['job'])
+        self.assertEqual(payload['job']['time_limit']['number'],5)
+        self.assertEqual(payload['job']['standard_error'],'build.log')
+
+    def test_cancellation_checks_per_job_error_even_when_http_succeeds(self):
+        with patch.object(api,'credentials',return_value=self.auth),patch.object(api.urllib.request,'build_opener') as opener:
+            opener.return_value.open.return_value=self.response(dict(errors=[],status=[dict(error=dict(code=1,message='permission denied'))]))
+            with self.assertRaisesRegex(RuntimeError,'permission denied'):api.request('host','job/1','DELETE')
+
+    def test_slow_read_does_not_block_a_different_endpoint(self):
+        import threading
+        barrier=threading.Barrier(2);errors=[]
+        def request(host,endpoint):
+            barrier.wait(timeout=2)
+            return {endpoint:[]}
+        def run(endpoint):
+            try:api.read('host',endpoint,max_age=0)
+            except Exception as error:errors.append(error)
+        with patch.object(api,'request',side_effect=request):
+            threads=[threading.Thread(target=run,args=(endpoint,)) for endpoint in ('nodes','jobs')]
+            for thread in threads:thread.start()
+            for thread in threads:thread.join(timeout=3)
+        self.assertFalse(errors,errors)
+
     def test_failed_refresh_does_not_return_an_expired_cached_response(self):
         with patch.object(api,'request',side_effect=[{'jobs':[]},RuntimeError('offline')]) as request:
             first=api.read('host','jobs')

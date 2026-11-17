@@ -19,7 +19,7 @@ import sys
 import tarfile
 import szs
 from typing import Sequence
-from slurmy_archives import expand_axiom_pattern, tptp_collection_root, TPTP_DEFAULT_ROOT
+from slurmy_archives import expand_axiom_pattern, expand_axiom_source, tptp_collection_root, TPTP_DEFAULT_ROOT
 
 VERSION = "1.0.0"
 COLUMNS = ("solver_name", "command", "solver_directory", "problem", "wc_limit", "cpu_limit", "mem_limit", "cores",
@@ -213,7 +213,7 @@ def read_builds(filename: Path, check_paths: bool = True) -> list[BuildSpec]:
     return builds
 
 
-def read_axioms(filename: Path | None, progress=None) -> tuple[list[Path], dict[Path, Path]]:
+def read_axioms(filename: Path | None, progress=None, host=None) -> tuple[list[Path], dict[Path, Path]]:
     """Expand globs/archives into one job-local Axioms/ directory."""
     if filename is None:
         return [], {}
@@ -223,8 +223,8 @@ def read_axioms(filename: Path | None, progress=None) -> tuple[list[Path], dict[
     for line in filename.read_text(encoding='utf-8').splitlines():
         if not line.strip():
             continue
-        pattern = str(path_at(line.strip(), filename.parent))
-        for source, relative in expand_axiom_pattern(pattern, progress=progress):
+        pattern = line.strip() if line.strip().startswith('tptp://') else str(path_at(line.strip(), filename.parent))
+        for source, relative in expand_axiom_source(pattern, host or os.environ.get('SLURMY_HOST','datalab'), progress=progress):
             if relative in destinations.values() and destinations.get(source) != relative:
                 raise SlurmyError(f'custom axioms would overwrite the same Axioms/{relative}; choose one source')
             destinations[source] = relative
@@ -316,16 +316,16 @@ def write_script(path: Path, content: str) -> None:
 
 def generate(jobpairs: Path, building: Path, limiter_file: Path,
              axioms_file: Path | None = None, batch_size: int = 1, progress=None,
-             max_outstanding: int = 32, pair_order: str | None = None,
+             max_outstanding: int = 50, pair_order: str | None = None,
              materialize_calls: bool = True, host=None, partition=None,
              get_computer_info: bool = True) -> Path:
     tasks = read_pairs(jobpairs, host, partition)
     positive(str(batch_size), 'batch size')
-    positive(str(max_outstanding), 'maximum outstanding SLURM tasks')
+    positive(str(max_outstanding), 'maximum submitted SLURM tasks')
     if pair_order is not None and pair_order not in PAIR_ORDERS:
         raise SlurmyError("Invalid solver-problem pair order")
     builds = read_builds(building)
-    axioms, axiom_destinations = read_axioms(axioms_file, progress)
+    axioms, axiom_destinations = read_axioms(axioms_file, progress, host)
     if progress:
         progress('phase', 'Generating submission scripts', 0, 0)
     limiter = limiter_file.read_text(encoding="utf-8").strip()
@@ -556,7 +556,7 @@ def generate(jobpairs: Path, building: Path, limiter_file: Path,
         # NUL-separated paths allow spaces, commas, quotes and newlines.
         if progress:
             progress('phase', 'Collecting resource paths for packaging', 0, 0)
-        entries = sorted(set(roots + axioms + [Path(t['solver_root']) for t in tasks] +
+        entries = sorted(set(roots + [source for source in axioms if not str(source).startswith('tptp:')] + [Path(t['solver_root']) for t in tasks] +
                              [Path(t['problem']) for t in tasks if not t['remote_problem']]))
         entry_set = set(entries)
         selected = []
@@ -585,7 +585,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--materialize-calls",action="store_true",help="also write individual pair scripts locally for inspection")
     parser.add_argument('--no-computer-info', action='store_true', help='omit computer information from solver output')
     parser.add_argument("--batch-size", type=int, default=1, help="maximum solver-problem pairs owned by one SLURM array task; solver-problem pairs run sequentially (default: 1)")
-    parser.add_argument("--max-outstanding", type=int, default=32, help="maximum pending/running SLURM tasks from one job (default: 32)")
+    parser.add_argument("--max-outstanding", type=int, default=50, help="maximum pending/running SLURM tasks from one job (default: 50)")
     parser.add_argument('--pair-order', choices=PAIR_ORDERS,
                         help='declared input ordering; solver-major keeps configurations in separate batches')
     args = parser.parse_args(argv)
