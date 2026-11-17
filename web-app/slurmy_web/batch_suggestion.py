@@ -90,7 +90,10 @@ def estimate(configurations, total_pairs, maximum_outstanding, nodes):
         raise ValueError('Add at least one solver configuration.')
     hardware = min(capacities)
     parallelism = min(hardware, positive(str(maximum_outstanding), 'maximum submitted SLURM tasks'), 50)
-    return dict(batch_size=max(1, (total_pairs + 2 * parallelism - 1) // (2 * parallelism)),
+    assumed_hardware = max(1, hardware // 2)
+    assumed_parallelism = min(assumed_hardware, positive(str(maximum_outstanding), 'maximum submitted SLURM tasks'), 50)
+    return dict(batch_size=max(1, (total_pairs + assumed_parallelism - 1) // assumed_parallelism),
+                assumed_hardware_parallelism=assumed_hardware, assumed_parallelism=assumed_parallelism,
                 total_pairs=total_pairs, node_count=len(nodes), hardware_parallelism=hardware,
                 maximum_parallelism=parallelism, configuration_parallelism=capacities, capacity_breakdown=breakdowns)
 

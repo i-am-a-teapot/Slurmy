@@ -48,7 +48,7 @@ class BuilderUpdateTests(unittest.TestCase):
         nodes=batch.Topology([node]*10,active_tasks=10)
         with patch.object(batch,'partition_nodes',return_value=nodes),patch.object(workflows,'problem_glob',return_value=('pattern',[str(i) for i in range(1000)])):
             result=batch.suggest(dict(host='datalab',partition='CPU-amd',mode='interactive',configurations=[config,{**config,'solver_name':'B'}],globs=['pattern'],max_outstanding=50,pair_order='solver-major'))
-        self.assertEqual(result['balance_batch_size'],20)
+        self.assertEqual(result['balance_batch_size'],40)
         self.assertEqual(result['fit_batch_size'],50)
         self.assertEqual(result['batch_size'],50)
         self.assertEqual(result['suggested_batches'],40)

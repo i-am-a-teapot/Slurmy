@@ -422,8 +422,12 @@ into the job-local axiom tree, and are included as real files in portable export
 Picker addresses navigate on Enter or blur.
 
 The submitted-task window defaults to 50. The unified batch suggestion is the
-larger of the two-wave balancing size and the smallest size that fits all
+larger of the conservative half-capacity size and the smallest size that fits all
 allocation/configuration groups into the currently available submission window.
+The capacity estimate is `max(1, floor(hardware parallelism / 2))`, then capped
+by the workflow submission window and 50; the starting size is the pair count
+divided by that assumed parallelism, rounded up. The factor of two allows for
+other cluster users rather than aiming for two waves.
 If no size can fit, the explanation and submission warning say that later batches
 must wait for the local submitter. The explanation exposes capacity arithmetic
 and the current values; the estimate is not a promise of immediate scheduling.

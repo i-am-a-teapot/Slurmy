@@ -242,11 +242,12 @@ Consolidated stdout/stderr archives and download statistics remain at the top
 level. `CONTENTS.txt` explains the layout. Existing verbose downloads are
 organized into this layout on their next download.
 
-The workflow editor suggests a batch size in **SLURM Settings**. It first aims for
-two waves of parallel batches: `ceil(total pairs / (2 × parallel batches))`.
+The workflow editor suggests a batch size in **SLURM Settings**. It conservatively assumes
+only half the hardware capacity is available: `assumed capacity = max(1, floor(hardware capacity / 2))`.
+The starting batch size is `ceil(total pairs / assumed parallelism)`.
 Parallel capacity uses the selected partition's sockets, physical cores, requested
-cores and dedicated-socket/node placement, capped by the workflow's submitted-task
-limit (default **50**) and the cluster's 50-task cap. This uses total capacity,
+cores and dedicated-socket/node placement. The half-capacity estimate is then
+capped by the workflow's submitted-task limit (default **50**) and the cluster's 50-task cap. This uses total capacity,
 not currently idle nodes; memory and scheduling constraints can reduce it.
 
 It then increases that size, if necessary, so the actual grouped batches fit the

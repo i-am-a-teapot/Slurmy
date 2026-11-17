@@ -27,16 +27,16 @@ class BatchSuggestionTests(unittest.TestCase):
             with self.subTest(extra=extra):
                 result = batch.estimate([config(**extra)], 1001, 100, self.nodes)
                 self.assertEqual(result['hardware_parallelism'], capacity)
-                self.assertEqual(result['batch_size'], (1001+2*min(capacity,50)-1)//(2*min(capacity,50)))
+                self.assertEqual(result['batch_size'], (1001+min(max(1,capacity//2),50)-1)//min(max(1,capacity//2),50))
         capped = batch.estimate([config()], 1001, 32, self.nodes)
         self.assertEqual(capped['maximum_parallelism'], 32)
-        self.assertEqual(capped['batch_size'], 16)
+        self.assertEqual(capped['batch_size'], 32)
 
     def test_mixed_configs_use_minimum_and_whole_node_takes_precedence(self):
         result = batch.estimate([config(), config(exclusive_cpu='true'),
                                  config(exclusive_cpu='true', exclusive_node='true')], 1200, 100, self.nodes)
         self.assertEqual(result['configuration_parallelism'], [80, 20, 10])
-        self.assertEqual(result['batch_size'], 60)
+        self.assertEqual(result['batch_size'], 240)
 
     def test_heterogeneous_nodes_multi_socket_request_and_threads(self):
         nodes = self.nodes[:1] + [dict(sockets=2, cores_per_socket=16, threads_per_core=1)]
@@ -44,6 +44,19 @@ class BatchSuggestionTests(unittest.TestCase):
         self.assertEqual(result['hardware_parallelism'], 1)
         result = batch.estimate([dict(cores=8, threads_per_core=2)], 100, 100, nodes)
         self.assertEqual(result['hardware_parallelism'], 8)
+
+    def test_half_hardware_capacity_is_applied_before_submission_cap(self):
+        node=dict(sockets=1,cores_per_socket=10,threads_per_core=1)
+        result=batch.estimate([config(1)],1000,50,[node])
+        self.assertEqual(result['assumed_hardware_parallelism'],5)
+        self.assertEqual(result['assumed_parallelism'],5)
+        self.assertEqual(result['batch_size'],200)
+        result=batch.estimate([config(1)],1000,50,self.nodes)
+        self.assertEqual(result['assumed_hardware_parallelism'],320)
+        self.assertEqual(result['assumed_parallelism'],50)
+        self.assertEqual(result['batch_size'],20)
+        single=batch.estimate([config(10)],1000,50,[node])
+        self.assertEqual(single['assumed_parallelism'],1)
 
     def test_no_pairs_impossible_configuration_and_rounding(self):
         for configurations, count, outstanding in (([config()], 0, 32), ([config(65)], 100, 32),
