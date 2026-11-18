@@ -12,6 +12,33 @@ from prepare_axioms import prepare
 
 
 class AxiomPreparationTests(unittest.TestCase):
+    def test_full_cluster_collection_glob_uses_selected_root_without_copying(self):
+        import shutil
+        from slurmy import generate
+        import test_batching
+        for version in ('TPTP-v10.0.0', 'TPTP-v9.2.1'):
+            with self.subTest(version=version), tempfile.TemporaryDirectory() as folder:
+                root=Path(folder);assets=test_batching.SequentialBatchTests().prepare(root,[(False,False)],1)
+                shutil.rmtree(assets);(root/'submit.sh').unlink()
+                axioms=root/'axiom-globs.txt';axioms.write_text(f'tptp://{version}/Axioms/**/*.ax\n')
+                with patch('slurmy.read_axioms') as expand, patch.dict(os.environ,SLURMY_TPTP_ROOT='/other'):
+                    generate(root/'jobpairs.csv',root/'building.txt',root/'limiter.txt',axioms)
+                expand.assert_not_called()
+                config=(assets/'calls/0/config.sh').read_text()
+                self.assertIn(f'TPTP_DEFAULT_ROOT=/share/datasets/TPTP/{version}\n',config)
+                self.assertIn("TPTP_ROOT_REL=''",config)
+                self.assertFalse((assets/'prepare_axioms.sh').exists())
+                self.assertFalse((assets/'axiom-paths.json').exists())
+
+    def test_subset_or_mixed_axiom_globs_keep_job_local_preparation(self):
+        from slurmy import shared_axiom_root
+        with tempfile.TemporaryDirectory() as folder:
+            source=Path(folder)/'axiom-globs.txt'
+            for patterns in ('tptp://TPTP-v10.0.0/Axioms/SET*.ax\n',
+                             'tptp://TPTP-v10.0.0/Axioms/**/*.ax\n/local/extra.ax\n'):
+                source.write_text(patterns)
+                self.assertIsNone(shared_axiom_root(source))
+
     def test_generated_workflow_uses_one_python_preparation_process(self):
         import shutil
         from slurmy import generate

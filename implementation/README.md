@@ -290,7 +290,8 @@ for listed problems and packaged resources are translated into the cluster's
 Keep runtime dependencies within declared resource roots. For TPTP
 `include('Axioms/NAME.ax')`, `--axioms-file` packages custom axioms and points
 `TPTP` at their parent. Otherwise Slurmy uses the cluster's shared TPTP root
-when available; `SLURMY_TPTP_ROOT` can override it.
+when available; `SLURMY_TPTP_ROOT` can override the implicit default. An explicitly
+selected full-collection axiom glob takes precedence over that environment setting.
 
 </blockquote>
 </details>
@@ -453,6 +454,12 @@ New workflows directly define solver configurations paired with all selected
 problem sources. CSV replacement remains available through generated workflow
 files; older explicit-pair definitions keep their saved semantics when edited.
 Problem sources can be copied from another workflow, with duplicate globs omitted.
+The axiom editor uses the same source rows and local/cluster browsing as problems,
+prefilled with `tptp://TPTP-v10.0.0/Axioms/**/*.ax`. Existing custom sources are
+retained when editing; workflows with implicit shared axioms show the default glob.
+A single full-collection glob uses the selected shared collection directly, even
+when problems come from another version, avoiding copies of the whole axiom set.
+Replace the row for a different collection or subset, or add rows to combine sources.
 Local and cluster TPTP browsing are supported for both problems and custom axioms.
 Custom shared axioms use `tptp://VERSION/Axioms/...`, are copied on the cluster
 into the job-local axiom tree, and are included as real files in portable exports.

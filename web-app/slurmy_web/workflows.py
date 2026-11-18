@@ -168,7 +168,7 @@ def specification(data, destination_override=None, progress=None):
     rows = order_jobpairs(rows, pair_order)
     axiom_patterns = []
     if data.get('axiom_mode') == 'custom' and not data.get('axiom_globs'):
-        raise ValueError('Add at least one custom axiom glob, or use the cluster TPTP axioms.')
+        raise ValueError('Add at least one axiom source, such as the default cluster TPTP glob.')
     for value in data.get('axiom_globs', []):
         if not isinstance(value, str) or not value.strip():
             raise ValueError('Enter an axiom path or glob.')

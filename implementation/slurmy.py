@@ -19,7 +19,7 @@ import sys
 import tarfile
 import szs
 from typing import Sequence
-from slurmy_archives import expand_axiom_pattern, expand_axiom_source, tptp_collection_root, TPTP_DEFAULT_ROOT
+from slurmy_archives import expand_axiom_pattern, expand_axiom_source, tptp_collection_root, TPTP_DEFAULT_ROOT, TPTP_ROOT
 
 VERSION = "1.0.0"
 COLUMNS = ("solver_name", "command", "solver_directory", "problem", "wc_limit", "cpu_limit", "mem_limit", "cores",
@@ -213,6 +213,17 @@ def read_builds(filename: Path, check_paths: bool = True) -> list[BuildSpec]:
     return builds
 
 
+def shared_axiom_root(filename: Path | None) -> str | None:
+    """A single full-collection glob can use shared includes without copying."""
+    if filename is None:
+        return None
+    patterns = [line.strip() for line in filename.read_text(encoding='utf-8').splitlines() if line.strip()]
+    if len(patterns) != 1:
+        return None
+    match = re.fullmatch(r'tptp://(TPTP-[A-Za-z0-9_.-]+)/Axioms/\*\*/\*\.ax', patterns[0])
+    return f'{TPTP_ROOT}/{match[1]}' if match else None
+
+
 def read_axioms(filename: Path | None, progress=None, host=None) -> tuple[list[Path], dict[Path, Path]]:
     """Expand globs/archives into one job-local Axioms/ directory."""
     if filename is None:
@@ -325,7 +336,8 @@ def generate(jobpairs: Path, building: Path, limiter_file: Path,
     if pair_order is not None and pair_order not in PAIR_ORDERS:
         raise SlurmyError("Invalid solver-problem pair order")
     builds = read_builds(building)
-    axioms, axiom_destinations = read_axioms(axioms_file, progress, host)
+    shared_axioms = shared_axiom_root(axioms_file)
+    axioms, axiom_destinations = ([], {}) if shared_axioms else read_axioms(axioms_file, progress, host)
     if progress:
         progress('phase', 'Generating submission scripts', 0, 0)
     limiter = limiter_file.read_text(encoding="utf-8").strip()
@@ -399,6 +411,7 @@ def generate(jobpairs: Path, building: Path, limiter_file: Path,
                     "planned_batch_tasks": [[t["task_id"] for t in batch] for batch in batches],
                     "batch_policy": "one solver-problem pair at a time per batch; batches have matching core and sharing requests; solver-major collects matching configurations across interleaved input rows",
                     "get_computer_info": get_computer_info,
+                    "shared_axiom_root": shared_axioms,
                     "buffers": {"per_call_seconds": 80 if get_computer_info else 30, "per_call_memory_mib": 128, "batch_seconds": 60}}
         (assets / "metadata.json").write_text(json.dumps(metadata, indent=2) + "\n")
         (assets / "manifest.jsonl").write_text("".join(json.dumps(t) + "\n" for t in tasks))
@@ -453,7 +466,7 @@ def generate(jobpairs: Path, building: Path, limiter_file: Path,
                         + task["limiter_command"] + "\n"
                     )
                     emit("limiter.sh", limiter_script)
-                    default_tptp = (tptp_collection_root(task['problem']) if task['remote_problem'] else None) or TPTP_DEFAULT_ROOT
+                    default_tptp = shared_axioms or (tptp_collection_root(task['problem']) if task['remote_problem'] else None) or TPTP_DEFAULT_ROOT
                     config = "".join(key.upper() + "=" + shlex.quote(str(value)) + "\n" for key, value in {
                         "task_id": task["task_id"], "task_key": task["task_key"], "batch_id": task["batch_id"],
                         "cores": task["cores"], "threads_per_core": task["threads_per_core"],
@@ -463,7 +476,7 @@ def generate(jobpairs: Path, building: Path, limiter_file: Path,
                         "computer_info_timestamp": int(computer_info_timestamp),
                             "solver_root_rel": task['solver_root'].lstrip("/"),
                             "tptp_root_rel": '.slurmy-tptp' if axioms else '',
-                            "tptp_default_root": os.environ.get('SLURMY_TPTP_ROOT') or default_tptp}.items())
+                            "tptp_default_root": shared_axioms or os.environ.get('SLURMY_TPTP_ROOT') or default_tptp}.items())
                     emit("config.sh",config,0o644)
                     if progress and (index % 1000 == 0 or index == len(tasks)):
                         progress('calls', 'Generating solver-problem pair scripts', index, len(tasks))

@@ -26,6 +26,10 @@ class BuilderUpdateTests(unittest.TestCase):
         self.assertIn(b'name="max_outstanding" type="number" min="1" step="1" value="50"',response.data)
         self.assertNotIn(b'id="path-go"',response.data)
         self.assertIn(b'id="batch-explanation-dialog"',response.data)
+        self.assertNotIn(b'name="axiom_mode"',response.data)
+        self.assertNotIn(b'Custom axiom globs',response.data)
+        self.assertIn(b'tptp://TPTP-v10.0.0/Axioms/**/*.ax',response.data)
+        self.assertIn(b'Add another axiom source',response.data)
 
     def test_copy_problem_sources_preserves_uri_and_deduplicates(self):
         glob='tptp://TPTP-v10.0.0/Problems/SET/*.p'
