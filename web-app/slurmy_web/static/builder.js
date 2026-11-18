@@ -70,22 +70,36 @@ if(document.body.dataset.page==='new'){
  });
  copySolver.addEventListener('change',()=>{const choice=copySolver.value?copyChoices[Number(copySolver.value)]:null;copyConfirm.disabled=!choice;if(choice)highlightShell(copyPreview,`${choice.command}\nRoot: ${choice.solver_directory}\nLimits: ${choice.cpu_limit}s CPU, ${choice.wc_limit}s wall, ${choice.mem_limit}, ${choice.cores} core(s), ${choice.threads_per_core||1} thread(s)/core\nBuild: ${choice.build_mode==='script'?choice.build_script:'none'}`);else copyPreview.textContent='Choose a solver configuration to preview it.';});
  copyConfirm.addEventListener('click',()=>{const choice=copyChoices[Number(copySolver.value)];if(!copySolver.value||!choice)return;const card=add('configuration-template','configurations');fill(card,choice);$('#builder-error').hidden=true;visibility();copyDialog.close();card.scrollIntoView({behavior:'smooth',block:'center'});for(const input of card.querySelectorAll('[data-path]'))if(input.value.trim())validatePath(input);});
- const problemsDialog=$('#copy-problems-dialog'),problemsWorkflow=$('#copy-problems-workflow'),problemsConfirm=$('#confirm-copy-problems');
- let problemChoices=[],problemsRequest=0;
- $('#close-copy-problems').addEventListener('click',()=>{++problemsRequest;problemsDialog.close();});
- $('#copy-problems').addEventListener('click',async()=>{
-  ++problemsRequest;problemChoices=[];problemsConfirm.disabled=true;problemsDialog.showModal();problemsWorkflow.replaceChildren(el('option','Loading workflows…'));
-  try{const data=await api('/api/solver-configurations?'+params({}));problemsWorkflow.replaceChildren(el('option','Choose a workflow…'));problemsWorkflow.firstChild.value='';for(const item of data.workflows){const option=el('option',`${item.group} · ${item.name}`);option.value=item.directory;problemsWorkflow.append(option);}}
-  catch(error){text('#copy-problems-error',error.message);$('#copy-problems-error').hidden=false;}
- });
- problemsWorkflow.addEventListener('change',async()=>{
-  const request=++problemsRequest;problemChoices=[];problemsConfirm.disabled=true;$('#copy-problems-error').hidden=true;
-  if(!problemsWorkflow.value){text('#copy-problems-preview','Select a workflow to see its problem sources.');return;}
-  text('#copy-problems-preview','Loading problem sources…');
-  try{const data=await api('/api/problem-sources?'+params({directory:problemsWorkflow.value}));if(request!==problemsRequest)return;problemChoices=data.globs||[];text('#copy-problems-preview',problemChoices.join('\n')||'This workflow has no problem sources.');problemsConfirm.disabled=!problemChoices.length;}
-  catch(error){if(request!==problemsRequest)return;text('#copy-problems-error',error.message);$('#copy-problems-error').hidden=false;}
- });
- problemsConfirm.addEventListener('click',()=>{const existing=new Set([...document.querySelectorAll('[name="glob"]')].map(input=>input.value.trim()));for(const glob of problemChoices)if(!existing.has(glob)){const row=add('glob-template','globs');fill(row,{glob});existing.add(glob);validatePath($('[name="glob"]',row));}problemsDialog.close();updateProblemStatus();});
+ for(const [plural,singular,target,template,field] of [
+  ['problems','problem','globs','glob-template','glob'],
+  ['axioms','axiom','axiom-globs','axiom-glob-template','axiom_glob']]){
+  const dialog=$(`#copy-${plural}-dialog`),workflow=$(`#copy-${plural}-workflow`),confirm=$(`#confirm-copy-${plural}`);
+  const trigger=$(`#copy-${plural}`);
+  if(!dialog||!workflow||!confirm||!trigger)continue;
+  let choices=[],requestId=0;
+  const error=message=>{text(`#copy-${plural}-error`,message);$(`#copy-${plural}-error`).hidden=!message;};
+  const preview=message=>text(`#copy-${plural}-preview`,message);
+  $(`#close-copy-${plural}`).addEventListener('click',()=>dialog.close());
+  dialog.addEventListener('close',()=>{++requestId;});
+  trigger.addEventListener('click',async()=>{
+   const request=++requestId;choices=[];confirm.disabled=true;error('');preview(`Select a workflow to see its ${singular} sources.`);
+   dialog.showModal();workflow.disabled=true;workflow.replaceChildren(el('option','Loading workflows…'));
+   try{const data=await api('/api/solver-configurations?'+params({}));if(request!==requestId)return;workflow.replaceChildren(el('option','Choose a workflow…'));workflow.firstChild.value='';for(const item of data.workflows){const option=el('option',`${item.group} · ${item.name}`);option.value=item.directory;workflow.append(option);}workflow.disabled=false;}
+   catch(failure){if(request===requestId)error(failure.message);}
+  });
+  workflow.addEventListener('change',async()=>{
+   const request=++requestId;choices=[];confirm.disabled=true;error('');
+   if(!workflow.value){preview(`Select a workflow to see its ${singular} sources.`);return;}
+   preview(`Loading ${singular} sources…`);
+   try{const data=await api(`/api/${singular}-sources?`+params({directory:workflow.value}));if(request!==requestId)return;choices=data.globs||[];preview(choices.join('\n')||`This workflow has no ${singular} sources.`);confirm.disabled=!choices.length;}
+   catch(failure){if(request===requestId)error(failure.message);}
+  });
+  confirm.addEventListener('click',()=>{
+   const existing=new Set([...document.querySelectorAll(`[name="${field}"]`)].map(input=>input.value.trim()));
+   for(const glob of choices)if(!existing.has(glob)){const row=add(template,target);fill(row,{[field]:glob});existing.add(glob);validatePath($(`[name="${field}"]`,row));}
+   dialog.close();updateProblemStatus();
+  });
+ }
  const limiterDialog=$('#copy-limiter-dialog'),limiterWorkflow=$('#copy-limiter-workflow'),limiterPreview=$('#copy-limiter-preview'),limiterConfirm=$('#confirm-copy-limiter');
  let limiterChoice=null,limiterRequest=0;
  function limiterCopyError(message){text('#copy-limiter-error',message);$('#copy-limiter-error').hidden=!message;}

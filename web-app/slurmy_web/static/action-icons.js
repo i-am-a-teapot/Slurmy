@@ -5,7 +5,7 @@ window.SlurmyActionIcons=(()=>{
   const selector='button,a.button,label.button,a.back';
   const rules=[
     [/3d|comparison/i,'cube'],[/recovery|archive/i,'box-archive'],
-    [/replace/i,'upload'],[/duplicat|copy|import.*configuration/i,'copy'],[/download/i,'download'],[/upload|import/i,'upload'],
+    [/replace/i,'upload'],[/duplicat|copy|import.*configuration|(?:sources|configuration) from existing workflow/i,'copy'],[/download/i,'download'],[/upload|import/i,'upload'],
     [/restor/i,'clock-rotate-left'],[/delet|remove permanently/i,'trash-can'],[/remov|clear/i,'xmark'],
     [/renam|edit/i,'pen'],[/refresh|try again|retry/i,'rotate'],[/stop|kill/i,'stop'],[/resum|start/i,'play'],
     [/prepar|build/i,'gears'],[/dispatch|submit/i,'paper-plane'],[/sav|create copy/i,'floppy-disk'],
@@ -25,7 +25,8 @@ window.SlurmyActionIcons=(()=>{
   function decorate(control){
     if(control.matches('.collapse-toggle,.sort-button,.theme-option,.outcome-row-button,.cluster-node-button,.theme-toggle')||control.closest('template'))return;
     const label=(control.getAttribute('aria-label')||control.textContent||'').trim();
-    let icon=iconFor(label);
+    const stepIcons=['list-check','gears','folder-open','shield-halved','sliders','eye'];
+    let icon=stepIcons[control.dataset.stepTab]||iconFor(label);
     if(!icon && control.textContent.trim()==='✕')icon='xmark';
     if(!icon){if(control.dataset.actionIcon)delete control.dataset.actionIcon;return;}
     if(control.dataset.actionIcon!==icon)control.dataset.actionIcon=icon;

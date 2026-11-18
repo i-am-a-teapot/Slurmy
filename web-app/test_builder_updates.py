@@ -46,6 +46,15 @@ class BuilderUpdateTests(unittest.TestCase):
         self.assertEqual(response.json['path'],uri);self.assertEqual(response.json['count'],1)
         self.assertEqual(expand.call_args.args[:2],(uri,'datalab'))
 
+    def test_copy_axiom_sources_preserves_sources_and_supports_implicit_cluster_defaults(self):
+        glob='tptp://TPTP-v9.2.1/Axioms/SET*.ax'
+        for sources,expected in [([glob,glob,'/tmp/local/*.ax'],[glob,'/tmp/local/*.ax']),
+                                 ([],['tptp://TPTP-v10.0.0/Axioms/**/*.ax'])]:
+            with self.subTest(sources=sources), patch.object(workflows,'decisions',return_value=dict(axiom_globs=sources)):
+                response=self.client.get('/api/axiom-sources',query_string=dict(directory=str(self.workflow)))
+            self.assertEqual(response.status_code,200)
+            self.assertEqual(response.json['globs'],expected)
+
     def test_unified_suggestion_uses_both_balancing_and_actual_batch_groups(self):
         node=dict(sockets=2,cores_per_socket=32,threads_per_core=1)
         config=dict(cores=1,threads_per_core=1,solver_name='A',command='./solver {{problem}}',cpu_limit=1,wc_limit=1,mem_limit='100MiB')

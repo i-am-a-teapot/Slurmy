@@ -460,6 +460,8 @@ retained when editing; workflows with implicit shared axioms show the default gl
 A single full-collection glob uses the selected shared collection directly, even
 when problems come from another version, avoiding copies of the whole axiom set.
 Replace the row for a different collection or subset, or add rows to combine sources.
+Both problem and axiom sources can be copied from existing workflows; the picker
+previews their globs, keeps current rows, and skips duplicates already selected.
 Local and cluster TPTP browsing are supported for both problems and custom axioms.
 Custom shared axioms use `tptp://VERSION/Axioms/...`, are copied on the cluster
 into the job-local axiom tree, and are included as real files in portable exports.

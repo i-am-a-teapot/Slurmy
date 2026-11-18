@@ -13,6 +13,7 @@ const context={window:{},document:{addEventListener(){}},requestAnimationFrame()
 vm.createContext(context);vm.runInContext(fs.readFileSync(process.argv[1],'utf8'),context);
 const api=context.window.SlurmyActionIcons;
 for(const [label,icon] of [['Duplicate workflow 3d-download','copy'],['Rename workflow download','pen'],['Delete workflow copy','trash-can'],['↓ Download','download'],['More download options','chevron-down'],['Browse cluster TPTP','folder-open'],['Restore','clock-rotate-left']])assert.equal(api.iconFor(label),icon);
+for(const source of ['Problem sources','Axiom sources','Configuration'])assert.equal(api.iconFor(source+' from existing workflow'),'copy');
 const text={nodeType:3,nodeValue:'↓ Download'},attributes={};
 const control={nodeType:1,childNodes:[text],dataset:{},matches:selector=>selector==='button,a.button,label.button,a.back',closest:()=>null,
  get textContent(){return text.nodeValue;},getAttribute:key=>attributes[key],setAttribute(key,value){attributes[key]=value;},querySelectorAll:()=>[],querySelector:()=>null,classList:{toggle(){}}};
@@ -20,6 +21,10 @@ api.scan(control);assert.equal(text.nodeValue,'Download');assert.equal(control.d
 text.nodeValue='Duplicate';api.scan(control);assert.equal(control.dataset.actionIcon,'copy');assert.equal(text.nodeValue,'Duplicate');
 api.scan(control);assert.equal(text.nodeValue,'Duplicate');
 text.nodeValue='Something else';api.scan(control);assert.equal(control.dataset.actionIcon,undefined);
+for(const [index,icon] of ['list-check','gears','folder-open','shield-halved','sliders','eye'].entries()){
+ control.dataset.stepTab=String(index);text.nodeValue=`${index+1} · Step`;
+ api.scan(control);assert.equal(control.dataset.actionIcon,icon);assert.equal(text.nodeValue,`${index+1} · Step`);
+}
 '''
         result=subprocess.run(['node','-e',script,str(root/'action-icons.js')],capture_output=True,text=True)
         self.assertEqual(result.returncode,0,result.stderr)

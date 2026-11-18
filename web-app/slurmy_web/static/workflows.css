@@ -280,7 +280,8 @@ dialog {
 }
 dialog::backdrop { background: #102e2866; }
 .solver-copy-action, .copy-configuration-actions { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
-.solver-copy-action { margin: 18px 0 4px; }
+.solver-copy-action { margin: 18px 0 4px; align-items: stretch; }
+.solver-copy-action > button { display: inline-flex; align-items: center; justify-content: center; min-height: 42px; line-height: 1.4; }
 .solver-copy-action .muted { margin: 0; }
 #copy-configuration-dialog, #copy-limiter-dialog { width: min(680px, calc(100vw - 32px)); padding: 26px; }
 #copy-configuration-dialog label, #copy-limiter-dialog label { margin-top: 18px; }

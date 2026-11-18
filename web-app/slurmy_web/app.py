@@ -705,6 +705,12 @@ def create_app():
                 globs.append(value)
         return jsonify(globs=list(dict.fromkeys(globs)))
 
+    @app.get('/api/axiom-sources')
+    def axiom_sources():
+        data = workflows.decisions(directory(), check_paths=False)
+        globs = data.get('axiom_globs') or [f'tptp://{TPTP_DEFAULT_VERSION}/Axioms/**/*.ax']
+        return jsonify(globs=list(dict.fromkeys(globs)))
+
     @app.get('/api/limiter-configuration')
     def limiter_configuration():
         return jsonify(workflows.copyable_limiter_configuration(directory()))
