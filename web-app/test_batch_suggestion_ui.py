@@ -5,6 +5,27 @@ import unittest
 
 
 class BatchSuggestionUITests(unittest.TestCase):
+    def test_explanation_highlights_units_and_explains_fractional_rounding(self):
+        script=r'''const fs=require('node:fs'),vm=require('node:vm'),assert=require('node:assert/strict');
+const source=fs.readFileSync(process.argv[1],'utf8');
+const render=source.slice(source.indexOf(' function renderBatchExplanation('),source.indexOf(' async function suggestBatchSize('));
+function el(tag,text='',className=''){return {tag,text,className,children:[],append(...nodes){this.children.push(...nodes);},replaceChildren(){this.children=[];},setAttribute(){}};}
+const content=el('div');
+const data={total_pairs:30,configuration_count:1,problem_count:30,hardware_parallelism:1280,node_count:20,configuration_parallelism:[1280],configuration_names:['QA Solver'],capacity_breakdown:[[{nodes:20,formula:'floor((2 CPU sockets/compute node × 32 physical cores/CPU socket) ÷ 1 physical core/batch)'}]],assumed_hardware_parallelism:640,assumed_parallelism:50,balance_batch_size:1,fit_batch_size:1,workflow_submit_limit:50,account_active_tasks:0,account_free_slots:50,submission_budget:50,minimum_batches:1,group_pair_counts:[30],batch_size:1,suggested_batches:30,suggested_fits:true};
+const context={el,$:()=>content,data};vm.createContext(context);vm.runInContext(render+';renderBatchExplanation(data);',context);
+const nodes=[];function walk(node){nodes.push(node);node.children.forEach(walk);}walk(content);
+const text=node=>String(node.text||'')+node.children.map(text).join('');const output=text(content);
+assert.match(output,/floor\(1,280 parallel batches ÷ 2\) = 640 assumed parallel batches/);
+assert.match(output,/ceil\(30 solver-problem pairs ÷ 50 parallel batches\) = 1 pair\/batch/);
+assert.match(output,/gives 0.6 pairs per batch/);assert.match(output,/ceil rounds UP/);
+assert.match(output,/no empty batches are created/);assert.match(output,/20 compute nodes/);assert.match(output,/2 CPU sockets/);
+assert(nodes.some(n=>n.className==='math-function'&&n.text==='floor'));
+assert(nodes.some(n=>n.className==='math-number'&&n.text==='640'));
+assert(nodes.some(n=>n.className==='math-operator'&&n.text==='÷'));
+'''
+        source=Path(__file__).parent/'slurmy_web/static/builder.js'
+        subprocess.run(['node','-e',script,str(source)],check=True,capture_output=True,text=True)
+
     def test_manual_override_stale_response_and_failure(self):
         script = r'''
 const fs=require('node:fs'), vm=require('node:vm'), assert=require('node:assert/strict');

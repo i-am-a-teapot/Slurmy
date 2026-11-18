@@ -71,14 +71,14 @@ def estimate(configurations, total_pairs, maximum_outstanding, nodes):
                 continue
             if dedicated_node:
                 per_node = 1
-                formula = '1 batch/node (dedicated whole node)'
+                formula = '1 batch/compute node (dedicated whole compute node)'
             elif dedicated_socket:
                 needed = (cores + per_socket - 1) // per_socket
                 per_node = sockets // needed
-                formula = f'floor({sockets} sockets/node ÷ ceil({cores} cores/batch ÷ {per_socket} cores/socket))'
+                formula = f"floor({sockets} CPU {'socket' if sockets == 1 else 'sockets'}/compute node ÷ ceil({cores} physical {'core' if cores == 1 else 'cores'}/batch ÷ {per_socket} physical cores/CPU socket))"
             else:
                 per_node = sockets * per_socket // cores
-                formula = f'floor(({sockets} sockets × {per_socket} cores/socket) ÷ {cores} cores/batch)'
+                formula = f"floor(({sockets} CPU {'socket' if sockets == 1 else 'sockets'}/compute node × {per_socket} physical cores/CPU socket) ÷ {cores} physical {'core' if cores == 1 else 'cores'}/batch)"
             slots += per_node
             formulas[(formula, per_node)] += 1
         if not slots:

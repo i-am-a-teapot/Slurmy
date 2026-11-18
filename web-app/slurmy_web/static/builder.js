@@ -336,13 +336,54 @@ if(document.body.dataset.page==='new'){
  function renderBatchExplanation(data){
   const content=$('#batch-explanation-content');content.replaceChildren();
   const flow=el('div',undefined,'batch-math-flow');content.append(flow);
-  function card(title,formula,explanation){const node=el('article',undefined,'batch-math-card');node.append(el('h3',title),el('p',formula,'batch-formula'),el('p',explanation));flow.append(node);return node;}
-  card('1. Count the Work',`${data.total_pairs.toLocaleString()} solver-problem pairs`,`${data.configuration_count} solver configuration${data.configuration_count===1?'':'s'} × ${data.problem_count===null?'the explicitly selected problems':data.problem_count.toLocaleString()+' distinct problems'}. Overlapping problem sources are counted only once.`);
-  const hardware=card('2. Find Parallel Capacity',`${data.hardware_parallelism.toLocaleString()} batches at full capacity`,`${data.node_count} nodes are available in this partition. Below is the capacity calculation for each solver’s core and placement settings. Use the smallest capacity across solver configurations. This counts total capacity, not currently idle nodes.`);
-  const details=el('ul');data.configuration_parallelism.forEach((count,index)=>details.append(el('li',`${data.configuration_names[index]}: ${data.capacity_breakdown?.[index]?.map(group=>`${group.nodes} nodes × ${group.formula}`).join(' + ')||'node capacity'} = ${count.toLocaleString()} parallel batches`)));hardware.append(details);
-  card('3. Assume Half the Capacity Is Available',`ceil(${data.total_pairs.toLocaleString()} ÷ ${data.assumed_parallelism}) = ${data.balance_batch_size}`,`To be conservative, assume only half the hardware capacity is available: floor(${data.hardware_parallelism} ÷ 2) = ${data.assumed_hardware_parallelism}, with a minimum of one. Then cap that estimate by your workflow limit (${data.workflow_submit_limit}) and the 50-task account limit, giving ${data.assumed_parallelism} parallel batches. This leaves room for other users; it is an assumption, not a measurement of current availability.`);
-  card('4. Fit the Submission Window',data.fit_batch_size?`At least ${data.fit_batch_size} ${data.fit_batch_size===1?'pair':'pairs'} per batch`:'No batch size fits immediately',`The account allows 50 running or pending tasks. ${data.account_active_tasks===null?'Current account usage is unknown; we assume 50 free slots for this estimate.':`${data.account_active_tasks} are currently submitted, leaving ${data.account_free_slots} slots.`} Your workflow limit is ${data.workflow_submit_limit}; the usable window is ${data.submission_budget}. Solver ordering and placement require ${data.minimum_batches} separate group${data.minimum_batches===1?'':'s'}. We find the smallest size for which the sum of ceil(group pairs ÷ batch size) fits that window.`);
-  card('5. Use the Larger Size',data.fit_batch_size?`max(${data.balance_batch_size}, ${data.fit_batch_size}) = ${data.batch_size}`:`Use ${data.batch_size} as the half-capacity estimate`,`${data.suggested_batches} ${data.suggested_batches===1?'batch':'batches'} will be created at this size. ${data.suggested_fits?'They fit the current submission window.':'Some batches must wait; keep the local server running until all batches are accepted.'} Each batch runs its pairs sequentially; different batches may run in parallel.`);
+  const amount=(number,singular,plural=singular+'s')=>`${number.toLocaleString()} ${number===1?singular:plural}`;
+  function calculation(value){
+   const code=el('code',undefined,'batch-calculation');let offset=0;
+   for(const match of value.matchAll(/\b(?:floor|ceil|min|max)(?=\s*\()|\d[\d,]*(?:\.\d+)?|[÷×=+−<>()]/g)){
+    if(match.index>offset)code.append(el('span',value.slice(offset,match.index),'math-unit'));
+    code.append(el('span',match[0],/^(floor|ceil|min|max)$/.test(match[0])?'math-function':/^\d/.test(match[0])?'math-number':'math-operator'));
+    offset=match.index+match[0].length;
+   }
+   if(offset<value.length)code.append(el('span',value.slice(offset),'math-unit'));
+   return code;
+  }
+  function card(title,formula,explanation){const node=el('article',undefined,'batch-math-card');node.append(el('h3',title),calculation(formula),el('p',explanation));flow.append(node);return node;}
+  function explain(node,formula,meaning){node.append(calculation(formula),el('p',meaning));}
+  const pairs=amount(data.total_pairs,'solver-problem pair');
+  card('1. Count the Work',data.problem_count===null?pairs:`${amount(data.configuration_count,'solver configuration')} × ${amount(data.problem_count,'distinct problem')} = ${pairs}`,data.problem_count===null?'Each explicit solver-problem pair is one row in the input file.':'Every solver configuration is paired with every selected problem. Overlapping problem sources count only once.');
+  const hardware=card('2. Find Parallel Capacity',amount(data.hardware_parallelism,'parallel batch','parallel batches')+' at full capacity',`${amount(data.node_count,'compute node')} in the selected partition. For each solver, calculate how many batches its cores and placement allow. Use the smallest capacity across solvers. This counts total capacity, not currently idle nodes.`);
+  data.configuration_parallelism.forEach((count,index)=>{
+   hardware.append(el('p',data.configuration_names[index],'batch-solver-name'));
+   const groups=data.capacity_breakdown?.[index];
+   const formula=groups?.map(group=>`${amount(group.nodes,'compute node')} × ${group.formula}`).join(' + ')||'Hardware capacity';
+   hardware.append(calculation(`${formula} = ${amount(count,'parallel batch','parallel batches')}`));
+  });
+  const halfFormula=data.hardware_parallelism<2?`max(1 parallel batch, floor(${amount(data.hardware_parallelism,'parallel batch','parallel batches')} ÷ 2))`:`floor(${amount(data.hardware_parallelism,'parallel batch','parallel batches')} ÷ 2)`;
+  const conservative=card('3. Assume Half the Capacity Is Available',`${halfFormula} = ${amount(data.assumed_hardware_parallelism,'assumed parallel batch','assumed parallel batches')}`,'Divide the hardware capacity by 2 to leave room for other cluster users. floor rounds DOWN to a whole batch; always allow at least one. This is a conservative assumption, not a measurement of current availability.');
+  explain(conservative,`min(${amount(data.assumed_hardware_parallelism,'assumed parallel batch','assumed parallel batches')}, ${amount(data.workflow_submit_limit,'workflow task slot')}, 50 account task slots) = ${amount(data.assumed_parallelism,'parallel batch','parallel batches')}`,'A batch uses one SLURM task. min chooses the smallest allowance: the assumed hardware capacity, your workflow submission limit, or the account limit.');
+  const quotient=data.total_pairs/data.assumed_parallelism;
+  const fraction=quotient.toLocaleString(undefined,{maximumSignificantDigits:4});
+  explain(conservative,`ceil(${pairs} ÷ ${amount(data.assumed_parallelism,'parallel batch','parallel batches')}) = ${amount(data.balance_batch_size,'pair','pairs')}/batch`,`Dividing the pairs among the assumed parallel batches gives ${fraction} pairs per batch. ceil rounds UP so the batch size is a whole number: ${amount(data.balance_batch_size,'solver-problem pair')} per batch.${data.total_pairs<data.assumed_parallelism?' There are fewer pairs than parallel slots, so some slots are unused; no empty batches are created.':''}`);
+  const fit=card('4. Fit the Submission Window',data.fit_batch_size?`At least ${amount(data.fit_batch_size,'solver-problem pair')} per batch`:'No batch size fits immediately','The account limit includes all running and pending SLURM tasks, including tasks outside Slurmy.');
+  if(data.account_active_tasks!==null){
+   explain(fit,`max(0 task slots, 50 account task slots − ${amount(data.account_active_tasks,'submitted task')}) = ${amount(data.account_free_slots,'free task slot')}`,'Subtract tasks already submitted by your cluster user. Do not count a negative number of free slots.');
+  }else fit.append(el('p','Current account usage is unknown; this estimate assumes 50 free task slots.'));
+  explain(fit,`min(${amount(data.account_free_slots,'free account task slot')}, ${amount(data.workflow_submit_limit,'workflow task slot')}) = ${amount(data.submission_budget,'usable task slot')}`,'This is how many batches can be submitted together under both limits. Availability can change.');
+  fit.append(el('p',`${amount(data.minimum_batches,'separate group')} must be kept separate because of solver ordering or placement. Round each group’s batch count UP, then add the counts. Find the smallest batch size whose total fits the usable task slots.`));
+  function groupCount(node,size,total){
+   const counts=data.group_pair_counts||[data.total_pairs];
+   const terms=counts.slice(0,6).map(count=>`ceil(${amount(count,'pair')} ÷ ${amount(size,'pair','pairs')}/batch)`);
+   if(counts.length>6)terms.push('…');
+   explain(node,`${terms.join(' + ')} = ${amount(total,'SLURM batch','SLURM batches')}`,counts.length>6?`The sum includes all ${amount(counts.length,'group')}; only the first six terms are shown.`:'Each rounded-up term is the number of batches for one group.');
+  }
+  if(data.fit_batch_size){
+   const counts=data.group_pair_counts||[data.total_pairs];
+   groupCount(fit,data.fit_batch_size,counts.reduce((sum,count)=>sum+Math.ceil(count/data.fit_batch_size),0));
+  }
+  const final=card('5. Use the Larger Size',data.fit_batch_size?`max(${amount(data.balance_batch_size,'pair','pairs')}/batch, ${amount(data.fit_batch_size,'pair','pairs')}/batch) = ${amount(data.batch_size,'pair','pairs')}/batch`:`Use ${amount(data.batch_size,'pair')} per batch as the half-capacity estimate`,'max chooses the larger batch size: enough work per batch for the conservative capacity estimate, and enough pairs per batch to fit the submission window.');
+  groupCount(final,data.batch_size,data.suggested_batches);
+  final.append(el('p',data.suggested_fits?`${amount(data.suggested_batches,'batch','batches')} fit the ${amount(data.submission_budget,'usable task slot')}.`:'Some batches must wait. Keep the local server running until all batches are accepted.'));
+  final.append(el('p','Each batch runs its pairs sequentially; different batches can run in parallel.'));
   const picture=el('div',undefined,'batch-window-picture');picture.setAttribute('aria-label',`${data.suggested_batches} suggested batches; ${data.submission_budget} available submission slots`);
   const shown=Math.min(data.suggested_batches,100);for(let i=0;i<shown;i++){const square=el('span',String(i+1),i<data.submission_budget?'batch-slot fits':'batch-slot waits');square.title=`Batch ${i+1}: ${i<data.submission_budget?'fits the current submission window':'must wait for a free submission slot'}`;picture.append(square);}content.append(picture,el('p','Each numbered box is one SLURM batch.'+(data.suggested_batches>100?' Only the first 100 are shown.':'')+' Account usage can change after this calculation.','muted'));
  }
