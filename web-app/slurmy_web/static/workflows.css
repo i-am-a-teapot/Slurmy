@@ -534,3 +534,9 @@ details[data-section-state="closing"] > summary::before { transform: rotate(0deg
 .workflow-file-name { flex: 1; overflow-wrap: anywhere; }
 .workflow-file-actions { display: inline-flex; gap: 8px; margin-left: auto; align-items: center; }
 .workflow-file-actions :is(button, .button) { padding: 6px 10px; font-size: 12px; }
+
+/* Batch membership loads only when the job's inspector is expanded. */
+.batch-inspector > summary { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 20px; }
+.batch-inspector > summary > span:first-of-type { margin-right: auto; }
+.batch-inspector > summary .muted { margin: 0; font-weight: 400; }
+.batch-inspector > .muted { margin-top: 12px; }

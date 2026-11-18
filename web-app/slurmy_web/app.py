@@ -868,6 +868,31 @@ def create_app():
         content = app.config.get('COLLECTOR', RemoteCollector)(host(), 10).fetch_batch_log(job_id, slurm_id)
         return jsonify(text=content or 'No SLURM log is available for this batch yet.')
 
+    @app.get('/api/jobs/<job_id>/batches')
+    def job_batches(job_id):
+        from .batches import batch_summaries
+        job = job_snapshot(job_id)
+        page_number, per_page, _, _ = call_page_args()
+        return jsonify(**batch_summaries(job, batch_allocations(job), page_number, min(per_page, 100)),
+                       refresh=g.snapshot_refresh)
+
+    @app.get('/api/jobs/<job_id>/batches/<int:batch_id>')
+    def job_batch(job_id, batch_id):
+        from .batches import batch_members
+        job = job_snapshot(job_id)
+        groups, estimated = batch_members(job)
+        if batch_id not in groups:
+            abort(404, 'Batch not found in this job.')
+        page_number, per_page, _, _ = call_page_args()
+        per_page = min(per_page, 100)
+        ids = groups[batch_id]
+        start = page_number * per_page
+        rows = list(task_rows(job, ids[start:start + per_page]))
+        for position, row in enumerate(rows, start + 1):
+            row['position'] = position
+        return jsonify(id=batch_id, tasks=rows, total=len(ids), membership_estimated=estimated,
+                       refresh=g.snapshot_refresh)
+
     @app.get('/api/jobs/<job_id>/output/<int:task_id>')
     def output(job_id, task_id):
         job = job_snapshot(job_id)

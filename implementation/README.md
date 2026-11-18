@@ -159,6 +159,12 @@ solver name, resource directory, command, per-pair limits, allocation settings,
 and unlimited-limit argument omission settings; the problem is excluded.
 Problem-major and random ordering continue to group by allocation settings,
 allowing different configurations to share a sequential batch.
+For a dispatched job, expand **Batches** on its job page, then expand a batch to
+see its solver-problem pairs in execution order, statuses, and output links. The
+inspector uses saved membership rather than dividing pair IDs by the batch size;
+batch IDs start at 0 and match the submission plan. Batch lists and pair lists are
+paginated and load only when expanded, reusing the job's cached snapshot. Stale
+snapshots and estimated membership for older jobs are labelled explicitly.
 The batch's SLURM wall-time budget includes all its solver-problem pairs; memory
 covers its largest pair. Socket/node isolation can allocate more physical cores
 than the solver's affinity limit: a 12-core solver still uses 12 cores when SLURM
