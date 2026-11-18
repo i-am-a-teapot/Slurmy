@@ -12,7 +12,7 @@ window.SlurmyCustomTheme = (() => {
   let draftName='My Theme';
   function refreshLibrary(){
     savedSelect.replaceChildren();
-    const placeholder=document.createElement('option');placeholder.value='';placeholder.textContent='Choose a Saved Theme';savedSelect.append(placeholder);
+    const placeholder=document.createElement('option');placeholder.value='';placeholder.textContent='Choose a saved theme';savedSelect.append(placeholder);
     api.library.forEach((item,index)=>{const option=document.createElement('option');option.value=String(index);option.textContent=item.name;savedSelect.append(option);});
   }
 
@@ -20,34 +20,34 @@ window.SlurmyCustomTheme = (() => {
   const controls = new Map();
   const schema = [
     ['Palette', [
-      ['mode','Color Mode','select',[['light','Light'],['dark','Dark']]],
-      ['paper','Page Background','color'],['surface','Panels & Cards','color'],['well','Inputs & Code Background','color'],
-      ['ink','Main Text','color'],['muted','Secondary Text','color'],['line','Borders','color'],['accent','Accent','color'],['accentInk','Text on Accent','color'],['sidebar','Sidebar','color'],
+      ['mode','Color mode','select',[['light','Light'],['dark','Dark']]],
+      ['paper','Page background','color'],['surface','Panels & cards','color'],['well','Inputs & code background','color'],
+      ['ink','Main text','color'],['muted','Secondary text','color'],['line','Borders','color'],['accent','Accent','color'],['accentInk','Text on accent','color'],['sidebar','Sidebar','color'],
     ]],
     ['Typography & Shape', [
-      ['font','Font Style','select',[['system','Modern Sans'],['humanist','Humanist Sans'],['serif','Editorial Serif'],['rounded','Rounded'],['mono','Monospace'],['compact','Compact Sans']]],
-      ['fontFamily','Installed Font Family (overrides style)','text'],['radius','Corner Radius','range',0,28,'px'],
+      ['font','Font style','select',[['system','Modern sans'],['humanist','Humanist sans'],['serif','Editorial serif'],['rounded','Rounded'],['mono','Monospace'],['compact','Compact sans']]],
+      ['fontFamily','Installed font family (overrides style)','text'],['radius','Corner radius','range',0,28,'px'],
     ]],
     ['Surfaces', [
-      ['opacity','Panel Opacity','range',40,100,'%'],['blur','Glass Blur','range',0,20,'px'],
-      ['transition','Transition Duration','range',0,600,'ms'],
+      ['opacity','Panel opacity','range',40,100,'%'],['blur','Glass blur','range',0,20,'px'],
+      ['transition','Transition duration','range',0,600,'ms'],
     ]],
     ['Section Animations', [
-      ['collapseDuration','Expand / Collapse Duration','range',0,800,'ms'],
-      ['collapseEasing','Expand / Collapse Easing','select',[['smooth','Smooth'],['gentle','Gentle'],['snappy','Snappy'],['linear','Linear']]],
-      ['collapseStyle','Expand / Collapse Style','select',[['slide','Slide'],['fade','Fade'],['slide-fade','Slide & Fade']]],
+      ['collapseDuration','Expand / collapse duration','range',0,800,'ms'],
+      ['collapseEasing','Expand / collapse easing','select',[['smooth','Smooth'],['gentle','Gentle'],['snappy','Snappy'],['linear','Linear']]],
+      ['collapseStyle','Expand / collapse style','select',[['slide','Slide'],['fade','Fade'],['slide-fade','Slide & fade']]],
     ]],
     ['Background & Motion', [
-      ['pattern','Background Pattern','select',[['none','None'],['grid','Grid'],['dots','Dots'],['weave','Woven Paper'],['diagonal','Diagonal Lines'],['stars','Stardust']]],
-      ['patternSize','Pattern Scale','range',8,100,'px'],
-      ['motion','Background Animation','select',[['none','Still'],['drift','Slow Drift'],['breathe','Breathing Glow']]],
-      ['imageFit','Image Fit','select',[['cover','Cover'],['contain','Contain'],['tile','Tile']]],['imageOpacity','Image Opacity','range',0,100,'%'],
+      ['pattern','Background pattern','select',[['none','None'],['grid','Grid'],['dots','Dots'],['weave','Woven paper'],['diagonal','Diagonal lines'],['stars','Stardust']]],
+      ['patternSize','Pattern scale','range',8,100,'px'],
+      ['motion','Background animation','select',[['none','Still'],['drift','Slow drift'],['breathe','Breathing glow']]],
+      ['imageFit','Image fit','select',[['cover','Cover'],['contain','Contain'],['tile','Tile']]],['imageOpacity','Image opacity','range',0,100,'%'],
     ]],
     ['Box Shadows', [
-      ['shadowColor','Shadow Color','color'],['shadowY','Vertical Offset','range',0,24,'px'],['shadowBlur','Shadow Blur','range',0,60,'px'],['shadowOpacity','Shadow Strength','range',0,60,'%'],
+      ['shadowColor','Shadow color','color'],['shadowY','Vertical offset','range',0,24,'px'],['shadowBlur','Shadow blur','range',0,60,'px'],['shadowOpacity','Shadow strength','range',0,60,'%'],
     ]],
     ['Text Shadows', [
-      ['textShadowColor','Heading Shadow Color','color'],['textShadowBlur','Heading Glow / Blur','range',0,24,'px'],['textShadowOpacity','Heading Shadow Strength','range',0,80,'%'],
+      ['textShadowColor','Heading shadow color','color'],['textShadowBlur','Heading glow / blur','range',0,24,'px'],['textShadowOpacity','Heading shadow strength','range',0,80,'%'],
     ]],
   ];
   function showError(message) { error.textContent = message; error.hidden = !message; }

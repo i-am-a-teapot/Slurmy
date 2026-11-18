@@ -38,21 +38,21 @@
 <div id="theme-picker" class="theme-picker" popover role="dialog" aria-labelledby="theme-picker-title">
   <div class="theme-picker-header"><div><h2 id="theme-picker-title">Color Themes</h2><p id="theme-preview-status" role="status">Hover to preview · click to keep</p></div><button id="close-theme-picker" class="secondary" type="button" aria-label="Close Theme Picker">✕</button></div>
   <div id="theme-options" role="listbox" aria-label="Color Themes"></div>
-  <button id="custom-theme-button" class="secondary custom-theme-launch" type="button">✧ Custom Theme <small>Colors, fonts, textures, motion &amp; shadows</small></button>
+  <button id="custom-theme-button" class="secondary custom-theme-launch" type="button">✧ Custom theme <small>Colors, fonts, textures, motion &amp; shadows</small></button>
 </div>
 <div id="custom-theme-editor" class="custom-theme-editor" popover="manual" role="dialog" aria-labelledby="custom-theme-title">
-  <div class="custom-theme-header"><div><h2 id="custom-theme-title" tabindex="-1">Custom Theme</h2><p>Every change previews live across the site.</p></div><button id="close-custom-theme" class="secondary" type="button" aria-label="Discard Custom Theme Changes">✕</button></div>
+  <div class="custom-theme-header"><div><h2 id="custom-theme-title" tabindex="-1">Custom Theme</h2><p>Every change previews live across the site.</p></div><button id="close-custom-theme" class="secondary" type="button" aria-label="Discard custom theme changes">✕</button></div>
   <div class="custom-theme-body">
-    <label>Theme Name<input id="custom-theme-name" type="text" maxlength="80" placeholder="My Theme"></label>
-    <label>Saved Themes<select id="custom-theme-saved"><option value="">Choose a Saved Theme</option></select></label>
-    <div class="theme-transfer"><button id="download-custom-theme" class="secondary" type="button">↓ Download Theme</button><label class="button secondary">↑ Upload Theme<input id="upload-custom-theme" type="file" accept=".json,application/json"></label></div>
+    <label>Theme name<input id="custom-theme-name" type="text" maxlength="80" placeholder="My Theme"></label>
+    <label>Saved themes<select id="custom-theme-saved"><option value="">Choose a saved theme</option></select></label>
+    <div class="theme-transfer"><button id="download-custom-theme" class="secondary" type="button">↓ Download theme</button><label class="button secondary">↑ Upload theme<input id="upload-custom-theme" type="file" accept=".json,application/json"></label></div>
     <p class="muted">Saving with an existing name updates that theme. Downloads include background images.</p>
-    <label>Start from a Preset<select id="custom-theme-base"><option value="">Current Settings</option></select></label>
+    <label>Start from a preset<select id="custom-theme-base"><option value="">Current settings</option></select></label>
     <div id="custom-theme-fields"></div>
-    <details open class="custom-theme-section"><summary>Background Image</summary><p class="muted">Images up to 20 MB are optimized locally to fit browser storage. Save Custom Theme to keep the image.</p><label class="theme-image-upload">Choose an Image<input id="custom-theme-image" type="file" accept="image/png,image/jpeg,image/webp,image/gif,image/avif,image/bmp"></label><p id="custom-image-error" class="error" role="alert" hidden></p><p id="custom-image-name" class="muted" role="status">No background image</p><button id="clear-custom-image" class="secondary" type="button">Remove Image</button></details>
+    <details open class="custom-theme-section"><summary>Background Image</summary><p class="muted">Images up to 20 MB are optimized locally to fit browser storage. Save custom theme to keep the image.</p><label class="theme-image-upload">Choose an image<input id="custom-theme-image" type="file" accept="image/png,image/jpeg,image/webp,image/gif,image/avif,image/bmp"></label><p id="custom-image-error" class="error" role="alert" hidden></p><p id="custom-image-name" class="muted" role="status">No background image</p><button id="clear-custom-image" class="secondary" type="button">Remove image</button></details>
     <p id="custom-theme-contrast" class="muted" role="status"></p><p id="custom-theme-error" class="error" role="alert" hidden></p>
   </div>
-  <div class="custom-theme-footer"><button id="discard-custom-theme" class="secondary" type="button">Discard Changes</button><button id="save-custom-theme" type="button">Save Custom Theme</button></div>
+  <div class="custom-theme-footer"><button id="discard-custom-theme" class="secondary" type="button">Discard changes</button><button id="save-custom-theme" type="button">Save custom theme</button></div>
 </div>
 <main>
   <header class="topbar"><div class="topbar-title">{% block page_heading %}<h1>Slurmy</h1>{% endblock %}</div>
@@ -62,11 +62,11 @@
   <div id="connection-settings" popover role="dialog" aria-labelledby="connection-title" class="connection-settings">
     <div class="section-heading"><h2 id="connection-title">Cluster Connection</h2><button type="button" class="secondary" popovertarget="connection-settings" popovertargetaction="hide">Close</button></div>
     <p class="muted">Settings for <strong id="connection-host"></strong>. File transfers, builds and historical accounting still use this SSH host.</p>
-    <label>Live Scheduler Operations<select id="connection-mode"><option value="ssh">SSH commands</option><option value="rest">SLURM REST API</option></select></label>
-    <div id="connection-api-fields"><label>API Server URL (Including Port)<input id="connection-url" type="url" placeholder="http://slurmapi.datalab.tuwien.ac.at:6820"></label><label>API Version<input id="connection-version" value="v0.0.40"></label></div>
+    <label>Live scheduler operations<select id="connection-mode"><option value="ssh">SSH commands</option><option value="rest">SLURM REST API</option></select></label>
+    <div id="connection-api-fields"><label>API server URL (including port)<input id="connection-url" type="url" placeholder="http://slurmapi.datalab.tuwien.ac.at:6820"></label><label>API version<input id="connection-version" value="v0.0.40"></label></div>
     <p class="muted">REST uses HTTP requests for live scheduler status, topology checks, batch submission and cancellation. Slurmy obtains a short-lived token through SSH and renews it when needed. Tokens stay in local server memory and are never sent to your browser. Datalab’s HTTP address requires your trusted cluster network/VPN.</p>
     <p class="muted">Submission waits on this computer between short waves. Keep the local server running and the computer awake until all batches are accepted. Already submitted SLURM tasks continue if you disconnect.</p>
-    <p id="connection-status" role="status"></p><div class="tools"><button id="connection-save" type="button">Save Connection</button><button id="connection-test" class="secondary" type="button">Test Saved Connection</button></div>
+    <p id="connection-status" role="status"></p><div class="tools"><button id="connection-save" type="button">Save connection</button><button id="connection-test" class="secondary" type="button">Test saved connection</button></div>
   </div>
   <div class="page">{% block content %}{% endblock %}</div>
   <section id="operation" class="operation" hidden aria-live="polite"><div class="section-heading"><h3 id="operation-title">Operation</h3><button id="dismiss-operation" class="secondary">Hide</button></div><pre id="operation-log"></pre></section>

@@ -1461,7 +1461,7 @@ def create_app():
                                        {'SLURMY_HOST': operation['operation_host']})
         op = operations[key]
         phase = ({'sync': 'Download results', 'sync_verbose': 'Download complete/verbose results',
-                  'sync_starexec': 'Download StarExec-Compatible Results',
+                  'sync_starexec': 'Download StarExec-compatible results',
                   'stop': 'Stop job', 'resume': 'Resume unfinished solver-problem pairs',
                   'delete': 'Stop and delete job', 'cancel': 'Cancel SLURM task'}.get(op['label'])
                  or submission_phase(content))

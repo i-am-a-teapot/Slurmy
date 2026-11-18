@@ -57,7 +57,7 @@ class JobOperationTests(unittest.TestCase):
             worker()
         self.assertIn('--starexec',run.call_args.args[0]);self.assertNotIn('--verbose',run.call_args.args[0])
         operation=self.client.get('/api/operations/'+response.json['id']).json
-        self.assertEqual(operation['phase'],'Download StarExec-Compatible Results')
+        self.assertEqual(operation['phase'],'Download StarExec-compatible results')
         self.assertEqual(self.action('stop').status_code,202)
 
     def test_starexec_download_can_be_stopped_while_running(self):
