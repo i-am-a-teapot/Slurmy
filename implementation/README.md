@@ -418,9 +418,11 @@ commentary or artificial EOF marker. If stdout ends with runsolver’s timestamp
 EOF, that exact line is placed last after appended stderr, without recalculating
 its timestamp. The bundled runsolver fixes a missing `break` after the `--add-eof` handler in
 the supplied source; builds exercise these options and verify a timestamped EOF.
-After rebuilding the corrected source, use `--timestamp --add-eof` in
-that order. Add `--add-eof` after `--timestamp` in custom invocations too;
-the older prebuilt binary needs the same fix before enabling the flag.
+The bundled prebuilt binary was rebuilt on datalab on 18 November 2026 and
+passes the native EOF smoke test. New defaults and bundled example workflows use
+`--timestamp --add-eof` in that order. Add `--add-eof` after `--timestamp` in
+existing custom invocations too; previously collected logs are not given an
+artificial EOF when downloaded.
 Standard and verbose downloads remain separate.
 
 ## Workflow Builder and REST Transport
