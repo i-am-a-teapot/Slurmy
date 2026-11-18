@@ -26,6 +26,7 @@ EXPORT_FIELDS = ('task_id', 'solver', 'problem', 'command', 'cores', 'threads_pe
                  'max_memory_kib', 'timed_out', 'memory_out', 'szs_status',
                  'szs_output', 'has_solver_stdout', 'has_solver_stderr', 'szs_status_code', 'szs_output_code')
 JOB_ID = re.compile(r'^[A-Za-z0-9][A-Za-z0-9_.-]*$')
+STAREXEC_FIELDS = (*EXPORT_FIELDS, 'has_combined_solver_output')
 ARCHIVE = re.compile(r'^[A-Za-z0-9._-]+\.tar\.gz$')
 
 
@@ -57,15 +58,16 @@ def records(root: Path) -> dict[int, dict[str, str]]:
     return found
 
 
-def export(root: Path) -> None:
-    directory = root / 'exports'
-    directory.mkdir(mode=0o700, exist_ok=True)
+def export(root: Path, combined: bool = False) -> None:
+    # StarExec staging must not replace the standard three-file download.
+    directory = root / 'exports' / 'starexec' if combined else root / 'exports'
+    directory.mkdir(mode=0o700, parents=True, exist_ok=True)
     with (directory / '.lock').open('a+') as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)
         source_files = [root / 'metadata.json', root / 'manifest.jsonl',
                         *sorted((root / 'results').glob('batch_*_task_*.csv')),
                         *sorted((root / 'results').glob('*.tar.gz'))]
-        signature = hashlib.sha256((szs.REGISTRY_VERSION + repr([(path.name, path.stat().st_size, path.stat().st_mtime_ns)
+        signature = hashlib.sha256(('streams-v2' + str(combined) + szs.REGISTRY_VERSION + repr([(path.name, path.stat().st_size, path.stat().st_mtime_ns)
                                          for path in source_files if path.is_file()])).encode()).hexdigest()
         signature_file = directory / '.signature'
         metadata = json.loads((root / 'metadata.json').read_text(encoding='utf-8'))
@@ -92,7 +94,8 @@ def export(root: Path) -> None:
                     directory_info.type = tarfile.DIRTYPE
                     directory_info.mode = 0o700
                     archive.addfile(directory_info)
-                writer = csv.DictWriter(csv_file, fieldnames=EXPORT_FIELDS)
+                fields = STAREXEC_FIELDS if combined else EXPORT_FIELDS
+                writer = csv.DictWriter(csv_file, fieldnames=fields)
                 writer.writeheader()
                 for task_id in range(count):
                     definition = definitions.get(task_id, {})
@@ -107,15 +110,25 @@ def export(root: Path) -> None:
                                cpu_limit=definition.get('cpu_limit', ''),
                                mem_limit=definition.get('mem_limit', ''),
                                has_solver_stdout='false', has_solver_stderr='false',
+                               has_combined_solver_output='false',
                                szs_status_code=szs.mnemonic(result.get('szs_status')),
                                szs_output_code=szs.data_mnemonic(result.get('szs_output')))
                     name = result.get('archive', '')
                     if ARCHIVE.fullmatch(name) and (root / 'results' / name).is_file():
                         with tarfile.open(root / 'results' / name, 'r:gz') as source:
-                            for member in source:
+                            members = source.getmembers() if combined else source
+                            combined_member = (next((member for member in members if member.isfile()
+                                                     and member.name.endswith('.solver-combined.log')), None)
+                                               if combined else None)
+                            for member in members:
                                 if not member.isfile():
                                     continue
-                                if member.name.endswith('.solver.log'):
+                                if combined_member is not None and member is combined_member:
+                                    target, field = stdout_tar, 'has_solver_stdout'
+                                    row['has_combined_solver_output'] = 'true'
+                                elif member.name.endswith('.solver.log'):
+                                    if combined_member is not None:
+                                        continue
                                     target, field = stdout_tar, 'has_solver_stdout'
                                 elif member.name.endswith('.solver-stderr.log'):
                                     target, field = stderr_tar, 'has_solver_stderr'
@@ -130,7 +143,7 @@ def export(root: Path) -> None:
                                 info.mode = 0o600
                                 target.addfile(info, content)
                                 row[field] = 'true'
-                    writer.writerow({field: row.get(field, '') for field in EXPORT_FIELDS})
+                    writer.writerow({field: row.get(field, '') for field in fields})
                     if (task_id + 1) % 1000 == 0 or task_id + 1 == count:
                         print(f'Exporting solver-problem pairs and logs: {task_id + 1}/{count}', flush=True)
             for name in names:
@@ -142,12 +155,12 @@ def export(root: Path) -> None:
 
 
 def main() -> int:
-    if len(sys.argv) != 2 or not JOB_ID.fullmatch(sys.argv[1]):
+    if len(sys.argv) not in (2, 3) or not JOB_ID.fullmatch(sys.argv[1]) or (len(sys.argv) == 3 and sys.argv[2] != '--combined'):
         raise SystemExit('Expected a Slurmy job ID.')
     root = Path.home() / 'slurmy' / 'jobs' / sys.argv[1]
     if not root.is_dir() or root.is_symlink():
         raise SystemExit('Job directory not found or is a symlink.')
-    export(root)
+    export(root, combined=len(sys.argv) == 3)
     return 0
 
 

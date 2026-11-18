@@ -20,6 +20,7 @@ export OMP_NUM_THREADS=$((CORES * THREADS_PER_CORE))
 work=$(mktemp -d "${SLURM_TMPDIR:-${TMPDIR:-/tmp}}/slurmy-call.XXXXXXXX")
 stem=$(printf 'task_%09d_%s' "$TASK_ID" "$TASK_KEY")
 export SOLVER_LOG="$work/$stem.solver.log"
+export SOLVER_STDOUT_LOG="$work/$stem.solver-stdout.log"
 export SOLVER_STDERR_LOG="$work/$stem.solver-stderr.log"
 export LIMITER_STDOUT_LOG="$work/$stem.limiter-stdout.log"
 export WATCHER_LOG="$work/$stem.watcher.log"
@@ -80,9 +81,18 @@ fi
 set -e
 active=
 fi
+if [[ -f "$SOLVER_STDOUT_LOG" ]]; then
+    # Runsolver's solver-data is the live combined stream. Publish raw stdout
+    # separately, so inspecting/downloading stderr never duplicates it there.
+    [[ ! -f "$SOLVER_LOG" ]] || mv "$SOLVER_LOG" "$work/$stem.solver-combined.log"
+    mv "$SOLVER_STDOUT_LOG" "$SOLVER_LOG"
+fi
 if [[ -f "$work/computer-info.header" ]]; then
-    { cat "$work/computer-info.header"; [[ ! -f "$SOLVER_LOG" ]] || cat "$SOLVER_LOG"; } > "$work/solver-with-info"
-    mv "$work/solver-with-info" "$SOLVER_LOG"
+    for log in "$SOLVER_LOG" "$work/$stem.solver-combined.log"; do
+        [[ "$log" == "$SOLVER_LOG" || -f "$log" ]] || continue
+        { cat "$work/computer-info.header"; [[ ! -f "$log" ]] || cat "$log"; } > "$work/solver-with-info"
+        mv "$work/solver-with-info" "$log"
+    done
     rm "$work/computer-info.header"
 fi
 wall=$(( $(date +%s) - started )); user=; system=; memory=; cpu=; max_vm=; cpu_usage=

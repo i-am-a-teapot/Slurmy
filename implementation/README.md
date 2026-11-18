@@ -410,13 +410,26 @@ filenames are retained; local problems go under Problems/local, with distinct
 parent directories when names collide. Unknown expected results are `--`;
 unfinished pairs are labelled incomplete. SZS mnemonics follow the
 [TPTP ontology](https://szs.tptp.org/) and [manual](https://tptp-manual.tptp.org/).
-Existing timestamped output lines are preserved, including their timestamp
-precision and whitespace. Older untimestamped lines carry final recorded pair
-CPU/wall totals as a compatibility fallback, not per-line measurements. Stdout
-precedes stderr; original interleaving was not recorded. The exporter adds no
-commentary or artificial EOF marker. If stdout ends with runsolver’s timestamped
-EOF, that exact line is placed last after appended stderr, without recalculating
-its timestamp. The bundled runsolver fixes a missing `break` after the `--add-eof` handler in
+Like StarExec, new runsolver workers capture stdout and stderr together through
+runsolver's live timestamping pipe. StarExec downloads copy that combined stream
+verbatim, including its native EOF; stderr is not appended a second time. Separate
+raw stdout/stderr copies remain available in the interface and standard downloads.
+Those copies retain the solver's own formatting rather than runsolver timestamps;
+the independently collected computer-information header is prepended as before.
+Two small `tee` processes drain the streams during execution and are awaited before
+publishing results. Timestamps reflect when runsolver receives output; Slurmy
+cannot force a solver to flush its own internal buffers or recover a total order
+of simultaneous writes from different processes. This capture applies to limiter
+templates using `--solver-data {{solver_log}}`; custom limiters retain their
+existing capture behavior.
+
+Older runs have no combined recording. Their timestamped stdout is preserved,
+then stderr is appended with final pair CPU/wall totals for untimestamped lines
+as a compatibility fallback, not per-line measurements. Their original stderr
+timing/interleaving cannot be recovered. A recorded stdout EOF, if present, is
+retained last with its original timestamp. Downloading reports this limitation
+outside the output files. The exporter adds no commentary or artificial EOF.
+The bundled runsolver fixes a missing `break` after the `--add-eof` handler in
 the supplied source; builds exercise these options and verify a timestamped EOF.
 The bundled prebuilt binary was rebuilt on datalab on 18 November 2026 and
 passes the native EOF smoke test. New defaults and bundled example workflows use

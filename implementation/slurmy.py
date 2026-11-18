@@ -334,6 +334,9 @@ def generate(jobpairs: Path, building: Path, limiter_file: Path,
     # First word is an executable path, not an arbitrary shell expression.
     words = shlex.split(limiter)
     computer_info_timestamp = '--timestamp' in words
+    # Runsolver captures both streams through its native timestamping pipe.
+    # Keep independent raw copies without removing stderr from that pipe.
+    capture_combined = '--solver-data' in words and '{{solver_log}}' in limiter
     limiter_path = path_at(words[0], limiter_file.parent)
     roots = [build.root for build in builds]
     if not any(limiter_path.is_relative_to(root) for root in roots):
@@ -418,9 +421,22 @@ def generate(jobpairs: Path, building: Path, limiter_file: Path,
                             target.write_bytes(payload);target.chmod(mode)
                     call = assets / "calls" / str(task["task_id"])
                     if materialize_calls:call.mkdir()
-                    emit("solver.sh", "#!/usr/bin/env bash\n" +
-                                 "# Capture the solver's stderr separately from its stdout.\n" +
-                                 "( " + task["remote_command"] + " ) 2> \"$SOLVER_STDERR_LOG\"\n")
+                    if capture_combined:
+                        solver_script = (
+                            '#!/usr/bin/env bash\n'
+                            '# Tee raw streams while runsolver measures their combined output live.\n'
+                            'exec 3> >(tee "$SOLVER_STDOUT_LOG")\nstdout_capture=$!\n'
+                            'exec 4> >(tee "$SOLVER_STDERR_LOG" >&2)\nstderr_capture=$!\n'
+                            '( ' + task['remote_command'] + ' ) >&3 2>&4\nsolver_status=$?\n'
+                            'exec 3>&- 4>&-\n'
+                            'wait "$stdout_capture"; stdout_status=$?\n'
+                            'wait "$stderr_capture"; stderr_status=$?\n'
+                            '(( stdout_status == 0 && stderr_status == 0 )) || exit 74\n'
+                            'exit "$solver_status"\n')
+                    else:
+                        solver_script = ('#!/usr/bin/env bash\n( ' + task['remote_command'] +
+                                         ' ) 2> "$SOLVER_STDERR_LOG"\n')
+                    emit('solver.sh', solver_script)
                     # Executable bits can be lost when resource trees cross filesystems
                     # (notably when workflows are prepared on macOS and staged on Linux).
                     # Repair the known limiter binary on the cluster immediately before

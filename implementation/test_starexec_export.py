@@ -11,7 +11,7 @@ from unittest.mock import patch
 import zipfile
 
 from starexec_export import FIELDS, export, job_number, summary_row
-from remote_export import EXPORT_FIELDS, stream_name
+from remote_export import EXPORT_FIELDS, STAREXEC_FIELDS, stream_name
 
 
 class StarExecExportTests(unittest.TestCase):
@@ -89,6 +89,21 @@ class StarExecExportTests(unittest.TestCase):
         row=summary_row(dict(complete='true',status='ok',szs_status='Theorem',szs_output='CNFRefutation'),'problem')
         self.assertEqual((row['SZSResult'],row['SZSOutput'],row['SZSStatus']),('THM-CRf','CRf','THM'))
 
+    def test_live_combined_stream_is_exported_verbatim_without_appending_stderr_again(self):
+        native = b'0.00/0.01\tearly stderr diagnostic\n0.10/1.00\tstdout\n0.10/1.01\tEOF\n'
+        with tempfile.TemporaryDirectory() as folder:
+            root=Path(folder);source=self.fixture(root,stdout=native)
+            path=source/'test_results-summary.csv'
+            with path.open(newline='') as stream: rows=list(csv.DictReader(stream))
+            for row in rows: row['has_combined_solver_output']='true'
+            with path.open('w',newline='') as stream:
+                writer=csv.DictWriter(stream,fieldnames=STAREXEC_FIELDS)
+                writer.writeheader();writer.writerows(rows)
+            names,*_=export(source,root/'out','combined')
+            with zipfile.ZipFile(root/'out'/names[1]) as archive:
+                for name in archive.namelist():
+                    self.assertEqual(archive.read(name),native)
+
     def test_failed_conversion_keeps_previous_zips(self):
         with tempfile.TemporaryDirectory() as folder:
             root=Path(folder);source=self.fixture(root);target=root/'starexec'
@@ -108,6 +123,7 @@ class StarExecExportTests(unittest.TestCase):
             root=Path(folder)
             def download(args,resolved_job_id=None):
                 self.assertEqual(resolved_job_id,'test-job');self.assertFalse(args.follow)
+                self.assertTrue(args.combined_solver_output)
                 staged=self.fixture(Path(args.output).parent)
                 self.assertEqual(staged,Path(args.output));return 0
             args=sync.build_parser().parse_args(['test-job','--starexec','--output',str(root/'out')])

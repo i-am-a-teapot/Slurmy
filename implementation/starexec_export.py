@@ -112,6 +112,12 @@ def export(compact: Path, destination: Path, job_id: str):
     ids = [int(row['task_id']) for row in rows]
     if len(set(ids)) != len(ids): raise ValueError('Duplicate solver-problem pair IDs in summary.')
     rows.sort(key=lambda row: int(row['task_id']))
+    legacy = sum(row.get('has_combined_solver_output') != 'true' and
+                 row.get('has_solver_stderr') == 'true' for row in rows)
+    if legacy:
+        print(f'Warning: {legacy} solver-problem pairs have legacy separate logs; '
+              'original stderr timing/order was not recorded. Untimestamped lines '
+              'use final pair totals in the StarExec compatibility fallback.', flush=True)
     benchmarks = benchmark_paths(rows)
     name = f'Job{job_number(job_id)}'
     names = (name + '_info.zip', name + '_output.zip')
@@ -146,7 +152,14 @@ def export(compact: Path, destination: Path, job_id: str):
                 prefix = f"{number(row.get('cpu_seconds'))}/{number(row.get('wall_seconds'))}\t".encode()
                 with output_zip.open(path, 'w', force_zip64=True) as output:
                     native_eof = None
+                    combined = row.get('has_combined_solver_output') == 'true'
+                    if combined and 0 not in present:
+                        raise ValueError(f'Missing combined output for solver-problem pair {task_id}.')
                     for i in present:
+                        if combined and i == 1:
+                            # Already present, genuinely timestamped, in solver-data.
+                            current[i] = next(archives[i], None)
+                            continue
                         eof = copy_output(current[i][1], output, prefix, defer_eof=(i == 0))
                         if eof is not None: native_eof = eof
                         current[i] = next(archives[i], None)

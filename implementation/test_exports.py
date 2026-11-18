@@ -73,6 +73,33 @@ class ExportTests(unittest.TestCase):
         sync.consolidate_solver_streams(self.root, self.records)
         self.assert_archives(self.root)
 
+    def test_starexec_prefers_combined_capture_without_changing_standard_download(self):
+        for task_id,row in self.records.items():
+            path=self.root/'results'/row['archive']
+            # Rebuild fixture archives with a third, independently captured stream.
+            with tarfile.open(path, 'w:gz') as archive:
+                for suffix,content in [('solver.log',b'pure stdout'),
+                                       ('solver-stderr.log',b'pure stderr'),
+                                       ('solver-combined.log',b'0.00/0.01\tpure stderr\n0.00/0.02\tpure stdout\n0.00/0.03\tEOF\n')]:
+                    member=tarfile.TarInfo(f'task_{task_id:09d}_abcdef.{suffix}')
+                    member.size=len(content);archive.addfile(member,io.BytesIO(content))
+        remote_export.export(self.root)
+        remote_export.export(self.root,combined=True)
+        for combined in (False,True):
+            directory=self.root/'exports'/('starexec' if combined else '')
+            with tarfile.open(directory/'study_solver-stdout.tgz') as archive:
+                for member in archive:
+                    if member.isfile():
+                        content=archive.extractfile(member).read()
+                        self.assertEqual(b'pure stderr' in content,combined)
+                        self.assertIn(b'pure stdout',content)
+            with (directory/'study_results-summary.csv').open(newline='') as stream:
+                rows=list(csv.DictReader(stream))
+            if combined:
+                self.assertTrue(all(row['has_combined_solver_output']=='true' for row in rows))
+            else:
+                self.assertNotIn('has_combined_solver_output',rows[0])
+
     def test_verbose_layout_migrates_old_download_and_preserves_raw_references(self):
         originals = {path.name: path.read_bytes() for path in (self.root/'results').iterdir()}
         args = SimpleNamespace(host='test-host', job_id='study', ssh_timeout=10,

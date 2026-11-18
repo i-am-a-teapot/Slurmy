@@ -727,6 +727,8 @@ def compact_sync_loop(args: argparse.Namespace, resolved_job_id=None) -> int:
                    f'ConnectTimeout={max(1, int(args.ssh_timeout))}', '-o',
                    'ServerAliveInterval=15', '-o', 'ServerAliveCountMax=3',
                    '--', args.host, 'python3', '-u', '-', job_id]
+        if getattr(args, 'combined_solver_output', False):
+            command.append('--combined')
         try:
             with tempfile.TemporaryFile() as script:
                 script.write(szs.remote_program(exporter.read_text()))
@@ -774,6 +776,8 @@ def compact_sync_loop(args: argparse.Namespace, resolved_job_id=None) -> int:
             print(f'Moved older detailed results to {legacy}; no files were deleted.', flush=True)
         destination.mkdir(parents=True, exist_ok=True)
         remote = f'{args.host}:slurmy/jobs/{job_id}/exports/'
+        if getattr(args, 'combined_solver_output', False):
+            remote += 'starexec/'
         # Stage all files first: failed transfers must keep the previous export.
         with tempfile.TemporaryDirectory(prefix='.slurmy-download-', dir=destination.parent) as temporary:
             stage = Path(temporary)
@@ -828,7 +832,8 @@ def starexec_sync_loop(args):
     while True:
         with tempfile.TemporaryDirectory(prefix='slurmy-starexec-') as folder:
             compact = Path(folder) / 'compact'
-            download = argparse.Namespace(**{**vars(args), 'job_id': job_id, 'output': str(compact), 'follow': False})
+            download = argparse.Namespace(**{**vars(args), 'job_id': job_id, 'output': str(compact), 'follow': False,
+                                             'combined_solver_output': True})
             compact_sync_loop(download, resolved_job_id=job_id)
             print('Converting summary and solver output to StarExec-compatible ZIPs…', flush=True)
             names, completed, total = export(compact, destination, job_id)
