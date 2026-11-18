@@ -150,6 +150,15 @@ batches can run concurrently across nodes. A batch contains matching core counts
 and sharing/isolation requests, so a shared solver never inherits a dedicated
 solver's socket or node allocation. Interleaved compatible requests are packed
 together up to the batch size; dedicated requests do not create one batch per pair.
+With `PAIR_ORDER := solver-major`, each configuration has its own open batch:
+Slurmy collects its next N matching rows even when other configurations appear
+between them in `jobpairs.csv`. For example, A1, B1, A2, B2 with batch size 2
+becomes [A1, A2] and [B1, B2]. Rows retain their order within each configuration,
+and every row belongs to exactly one batch. Configuration identity includes the
+solver name, resource directory, command, per-pair limits, allocation settings,
+and unlimited-limit argument omission settings; the problem is excluded.
+Problem-major and random ordering continue to group by allocation settings,
+allowing different configurations to share a sequential batch.
 The batch's SLURM wall-time budget includes all its solver-problem pairs; memory
 covers its largest pair. Socket/node isolation can allocate more physical cores
 than the solver's affinity limit: a 12-core solver still uses 12 cores when SLURM

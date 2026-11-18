@@ -13,7 +13,7 @@ from slurmy import COLUMNS, REPO, generate
 
 
 class SequentialBatchTests(unittest.TestCase):
-    def prepare(self, root, flags, size, pair_order=None, core_counts=None, limits=(6, 3, '100MiB')):
+    def prepare(self, root, flags, size, pair_order=None, core_counts=None, limits=(6, 3, '100MiB'), overrides=None):
         problem = root/'example.p'
         problem.touch()
         (root/'limiter').touch()
@@ -23,6 +23,8 @@ class SequentialBatchTests(unittest.TestCase):
                 solver_directory=str(root), problem=str(problem), wc_limit=limits[0], cpu_limit=limits[1],
                 mem_limit=limits[2], cores=core_counts[i] if core_counts else 2, threads_per_core=1,
                 cpus='auto', exclusive_cpu=str(socket).lower(), exclusive_node=str(node).lower()))
+            if overrides:
+                rows[-1].update(overrides[i])
         pairs=root/'jobpairs.csv'
         with pairs.open('w', newline='') as output:
             writer=csv.DictWriter(output, fieldnames=COLUMNS)
@@ -63,12 +65,34 @@ class SequentialBatchTests(unittest.TestCase):
                 self.assertIn(f'MAX_CORES={cores}',plan)
                 self.assertIn(f'EXCLUSIVE_CPU={socket}',plan)
 
-    def test_solver_major_starts_new_batch_at_configuration_boundary(self):
+    def test_solver_major_collects_interleaved_configurations_until_batches_are_full(self):
         with tempfile.TemporaryDirectory() as folder:
-            assets = self.prepare(Path(folder), [(False, False), (False, False)],
+            assets = self.prepare(Path(folder), [(False, False)] * 202,
                                   100, pair_order='solver-major')
             metadata = json.loads((assets/'metadata.json').read_text())
-            self.assertEqual(metadata['planned_batch_tasks'], [[0],[1]])
+            expected = [list(range(0,200,2)), list(range(1,200,2)), [200], [201]]
+            self.assertEqual(metadata['planned_batch_tasks'], expected)
+            for index, ids in enumerate(expected):
+                plan = (assets/'plans'/f'batch_{index:06d}.sh').read_text()
+                task_ids = plan.split('TASK_IDS=(\n',1)[1].split(')',1)[0]
+                self.assertEqual([int(value) for value in task_ids.split()],ids)
+
+    def test_solver_major_keeps_different_requests_of_the_same_solver_separate(self):
+        with tempfile.TemporaryDirectory() as folder:
+            assets = self.prepare(Path(folder), [(False,False)] * 8, 100,
+                                  pair_order='solver-major',core_counts=[1,1,2,2,1,1,2,2])
+            metadata = json.loads((assets/'metadata.json').read_text())
+            self.assertEqual(metadata['planned_batch_tasks'], [[0,4],[1,5],[2,6],[3,7]])
+
+    def test_solver_major_distinguishes_limits_and_commands_with_matching_allocations(self):
+        for variant in ({'cpu_limit': 5}, {'wc_limit': 20}, {'mem_limit': '200MiB'},
+                        {'command': './solver --strategy=other {{problem}}'}, {'omit_cpu_limit': 'true'}):
+            with self.subTest(variant=variant), tempfile.TemporaryDirectory() as folder:
+                overrides = [dict(solver_name='Same',**(variant if i%2 else {})) for i in range(6)]
+                assets = self.prepare(Path(folder), [(False,False)] * 6, 2,
+                                      pair_order='solver-major',overrides=overrides)
+                metadata = json.loads((assets/'metadata.json').read_text())
+                self.assertEqual(metadata['planned_batch_tasks'], [[0,2],[1,3],[4],[5]])
 
     def test_worker_keeps_solver_affinity_limit_with_socket_or_node_isolation(self):
         if not hasattr(os, 'sched_getaffinity') or not shutil.which('taskset'):
