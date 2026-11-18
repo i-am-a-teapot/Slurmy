@@ -15,7 +15,7 @@ from remote_export import EXPORT_FIELDS, stream_name
 
 
 class StarExecExportTests(unittest.TestCase):
-    def fixture(self, root):
+    def fixture(self, root, stdout=None):
         source=root/'compact';source.mkdir()
         rows=[]
         for task,problem,status,szs in [(0,'/share/TPTP/TPTP-v9.2.1/Problems/SET/SET002+3.p','ok','Theorem'),
@@ -33,7 +33,7 @@ class StarExecExportTests(unittest.TestCase):
                 for row in rows:
                     task=int(row['task_id'])
                     if task==2:continue
-                    content=(b'error diagnostic\n' if error else b'% SZS status Theorem\n0.10/0.20\tpre-timestamped\nproof\n')
+                    content=(b'error diagnostic\n' if error else stdout if stdout is not None else b'% SZS status Theorem\n0.10/0.20\tpre-timestamped\nproof\n')
                     member=tarfile.TarInfo('test/'+stream_name(row,task,error));member.size=len(content)
                     archive.addfile(member,io.BytesIO(content))
         return source
@@ -63,11 +63,31 @@ class StarExecExportTests(unittest.TestCase):
                 text=z.read(name).decode()
                 self.assertIn('1.25/2.5\t% SZS status Theorem',text)
                 self.assertIn('0.10/0.20\tpre-timestamped',text)
-                self.assertIn('stderr follows stdout',text);self.assertIn('error diagnostic',text)
-                self.assertTrue(text.endswith('EOF\n'))
+                self.assertNotIn('stderr follows stdout',text);self.assertIn('error diagnostic',text)
+                self.assertNotIn('Slurmy export:',text)
+                self.assertFalse(text.endswith('EOF\n'))
             # Repeat uses stable job/pair IDs and leaves standard downloads intact.
             self.assertEqual(export(source,target,'test-job')[0],names)
             self.assertEqual(len(list(source.iterdir())),3)
+
+    def test_native_eof_and_space_separated_timestamps_are_preserved(self):
+        native=b'0.00/0.01   # SZS status Theorem\n0.00/0.01\t# SZS output start CNFRefutation\n0.01/0.02\tEOF\n'
+        with tempfile.TemporaryDirectory() as folder:
+            root=Path(folder);source=self.fixture(root,stdout=native);target=root/'starexec'
+            names,*_=export(source,target,'native-eof')
+            with zipfile.ZipFile(target/names[1]) as archive:
+                for name in archive.namelist():
+                    text=archive.read(name)
+                    self.assertTrue(text.startswith(native.splitlines(keepends=True)[0]))
+                    self.assertTrue(text.endswith(b'0.01/0.02\tEOF\n'))
+                    self.assertEqual(text.count(b'EOF\n'),1)
+                    self.assertIn(b'error diagnostic\n',text)
+                    self.assertNotIn(b'Slurmy export:',text)
+                    self.assertNotIn(b'stderr follows stdout',text)
+
+    def test_theorem_cnfrefutation_codes_are_explicit_registry_lookups(self):
+        row=summary_row(dict(complete='true',status='ok',szs_status='Theorem',szs_output='CNFRefutation'),'problem')
+        self.assertEqual((row['SZSResult'],row['SZSOutput'],row['SZSStatus']),('THM-CRf','CRf','THM'))
 
     def test_failed_conversion_keeps_previous_zips(self):
         with tempfile.TemporaryDirectory() as folder:

@@ -22,7 +22,7 @@ FIELDS = ('benchmark', 'solver', 'configuration', 'status', 'cpu time', 'wallclo
 STATUS = {alias.casefold():code for name,code in szs.STATUSES.items() for alias in (name,code)}
 OUTPUT = {alias.casefold():code for name,code in szs.DATA_FORMS.items() for alias in (name,code)}
 PAIR_ID = re.compile(r'___([0-9]+)(?:\.stderr)?\.log$')
-TIMESTAMP = re.compile(rb'^\d+(?:\.\d+)?/\d+(?:\.\d+)?\t')
+TIMESTAMP = re.compile(rb'^\d+(?:\.\d+)?/\d+(?:\.\d+)?[ \t]+')
 
 
 def component(value):
@@ -87,12 +87,21 @@ def streams(archive):
             yield int(match[1]), archive.extractfile(member)
 
 
-def copy_output(source, output, prefix):
-    # Existing line timestamps are retained; otherwise pair totals are labelled
-    # explicitly so they cannot be mistaken for measured per-line timestamps.
+def copy_output(source, output, prefix, defer_eof=False):
+    # Keep native per-line measurements verbatim. Older untimestamped logs use
+    # pair totals as a compatibility fallback, documented outside solver output.
+    pending = None
     for line in source:
-        output.write(line if TIMESTAMP.match(line) else prefix + line)
-        if not line.endswith(b'\n'): output.write(b'\n')
+        if pending is not None:
+            output.write(pending if TIMESTAMP.match(pending) else prefix + pending)
+            if not pending.endswith(b'\n'): output.write(b'\n')
+        pending = line
+    if pending is not None:
+        if defer_eof and TIMESTAMP.match(pending) and TIMESTAMP.sub(b'', pending, count=1).strip() == b'EOF':
+            return pending if pending.endswith(b'\n') else pending+b'\n'
+        output.write(pending if TIMESTAMP.match(pending) else prefix + pending)
+        if not pending.endswith(b'\n'): output.write(b'\n')
+    return None
 
 
 def export(compact: Path, destination: Path, job_id: str):
@@ -136,12 +145,12 @@ def export(compact: Path, destination: Path, job_id: str):
                 path = f'{name}_output/{benchmark.parent}/{solver}___{solver}/{benchmark.name}/{task_id}.txt'
                 prefix = f"{number(row.get('cpu_seconds'))}/{number(row.get('wall_seconds'))}\t".encode()
                 with output_zip.open(path, 'w', force_zip64=True) as output:
-                    output.write(prefix + b'% Slurmy export: un-timestamped lines use final pair totals, not per-line measurements.\n')
+                    native_eof = None
                     for i in present:
-                        if i == 1: output.write(prefix + b'% Solver stderr follows stdout; original interleaving is unavailable.\n')
-                        copy_output(current[i][1], output, prefix)
+                        eof = copy_output(current[i][1], output, prefix, defer_eof=(i == 0))
+                        if eof is not None: native_eof = eof
                         current[i] = next(archives[i], None)
-                    output.write(prefix + b'EOF\n')
+                    if native_eof is not None: output.write(native_eof)
         # Both archives must be complete before replacing any previous download.
         for filename in names:
             (stage / filename).replace(destination / filename)

@@ -16,7 +16,7 @@ SOURCE="$SLURMY_BUILD_WORK/source"
     echo 'Missing bundled runsolver source; use implementation/build/runsolver as the build source directory.' >&2
     exit 1
 }
-for command in make g++ install; do
+for command in make g++ install timeout; do
     command -v "$command" >/dev/null || { echo "Missing build command: $command" >&2; exit 1; }
 done
 cp -R -- "$SOURCE" "$BUILD_TMP/source"
@@ -37,5 +37,21 @@ install -m 0755 -- "$BUILD_TMP/source/runsolver" "$SLURMY_BUILD_WORK/runsolver"
 runner_help=$("$SLURMY_BUILD_OUTPUT/runsolver" 2>&1 || true)
 grep -q -- '--rss-swap-limit' <<< "$runner_help" || {
     echo "Built runsolver failed its feature check." >&2
+    exit 1
+}
+
+# Exercise the timestamp/EOF option parser, not only its help text. In the
+# supplied source --add-eof once fell through into the next switch handler.
+timeout --signal=TERM --kill-after=2 10 "$SLURMY_BUILD_OUTPUT/runsolver" \
+    --cpu-limit 0 --wall-clock-limit 5 --rss-swap-limit 100 \
+    --timestamp --add-eof --watcher-data "$BUILD_TMP/eof-watcher" \
+    --var "$BUILD_TMP/eof-var" --solver-data "$BUILD_TMP/eof-output" \
+    /bin/sh -c 'printf "%% SZS status Theorem\n"' > "$BUILD_TMP/eof-controller" 2>&1 || {
+    cat "$BUILD_TMP/eof-controller" >&2
+    echo 'Built runsolver failed its timestamp/EOF smoke test.' >&2
+    exit 1
+}
+tail -n 1 "$BUILD_TMP/eof-output" | grep -Eq '^[0-9]+([.][0-9]+)?/[0-9]+([.][0-9]+)?[[:space:]]+EOF$' || {
+    echo 'Built runsolver did not emit a native timestamped EOF.' >&2
     exit 1
 }

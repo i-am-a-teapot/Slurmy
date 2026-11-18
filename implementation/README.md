@@ -75,7 +75,7 @@ runsolver. Its command should enforce the per-solver-problem pair limits and inv
 `{{solver_command}}`. For runsolver, a useful template is:
 
 ```text
-/home/me/runsolver/runsolver --cpu-limit {{cpu_limit}} --wall-clock-limit {{wc_limit}} --rss-swap-limit {{mem_limit_mib}} --timestamp --watcher-data {{watcher_log}} --var {{var_file}} --solver-data {{solver_log}} {{solver_command}}
+/home/me/runsolver/runsolver --cpu-limit {{cpu_limit}} --wall-clock-limit {{wc_limit}} --rss-swap-limit {{mem_limit_mib}} --timestamp --add-eof --watcher-data {{watcher_log}} --var {{var_file}} --solver-data {{solver_log}} {{solver_command}}
 ```
 
 CPU, wall-clock and memory limits accept **0**, meaning no per-solver-problem-pair
@@ -231,7 +231,12 @@ list without rebuilding or re-uploading inputs.
 All 53 **Success** and 29 **NoSuccess** values published at
 [the SZS ontologies](https://szs.tptp.org/) are recognized by full name and
 three-letter mnemonic, case-insensitively. The shared catalog is
-[`szs.py`](szs.py), checked on 16 November 2026. Workers, historical monitoring,
+[`szs.py`](szs.py), initially checked on 16 November 2026. Its 53 Success
+name/code mappings were also checked against the official
+[`SZS_Status.thy`](https://github.com/TPTPWorld/SZSOntologies/blob/master/SZS_Ontologies/SZS_Status.thy)
+on 18 November 2026. Translation is an offline lookup, not a network request or
+a guessed abbreviation. `Theorem` maps to `THM`, `CNFRefutation` to `CRf`, and the
+StarExec `SZSResult` joins them as `THM-CRf`. Workers, historical monitoring,
 charts, filters and downloads normalize equivalent spellings to the official
 full name. Acronyms also work in status searches and solver-outcome filters.
 A standalone three-letter code searches that exact status category, so `CTO`
@@ -405,10 +410,18 @@ filenames are retained; local problems go under Problems/local, with distinct
 parent directories when names collide. Unknown expected results are `--`;
 unfinished pairs are labelled incomplete. SZS mnemonics follow the
 [TPTP ontology](https://szs.tptp.org/) and [manual](https://tptp-manual.tptp.org/).
-Existing timestamped output lines are preserved. Other lines carry the final
-recorded pair CPU/wall totals, explicitly labelled as totals rather than per-line
-measurements. Stdout precedes stderr, with a separator explaining that the original
-interleaving was not recorded. Standard and verbose downloads remain separate.
+Existing timestamped output lines are preserved, including their timestamp
+precision and whitespace. Older untimestamped lines carry final recorded pair
+CPU/wall totals as a compatibility fallback, not per-line measurements. Stdout
+precedes stderr; original interleaving was not recorded. The exporter adds no
+commentary or artificial EOF marker. If stdout ends with runsolver’s timestamped
+EOF, that exact line is placed last after appended stderr, without recalculating
+its timestamp. The bundled runsolver fixes a missing `break` after the `--add-eof` handler in
+the supplied source; builds exercise these options and verify a timestamped EOF.
+After rebuilding the corrected source, use `--timestamp --add-eof` in
+that order. Add `--add-eof` after `--timestamp` in custom invocations too;
+the older prebuilt binary needs the same fix before enabling the flag.
+Standard and verbose downloads remain separate.
 
 ## Workflow Builder and REST Transport
 

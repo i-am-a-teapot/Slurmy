@@ -2,6 +2,9 @@
 
 Success, NoSuccess, and DataForm are separate vocabularies: SAT/Sat and ASS/Ass
 have different meanings. Tables contain names and identifiers, not copied prose.
+The 53 Success mappings also match the official SZS_Status.thy (2026-11-18):
+https://github.com/TPTPWorld/SZSOntologies/blob/master/SZS_Ontologies/SZS_Status.thy
+Conversions use this bundled table offline; they never fetch values at runtime.
 """
 from __future__ import annotations
 import re

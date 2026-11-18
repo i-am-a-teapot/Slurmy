@@ -125,7 +125,7 @@ fi
 szs_status=
 szs_status=$(sed -nE 's/.*SZS[[:space:]]+status[[:space:]]+([A-Za-z][A-Za-z0-9_-]*(\([[:space:]]*[A-Za-z]+[[:space:]]*,[[:space:]]*[A-Za-z]+[[:space:]]*\))?).*/\1/Ip' \
     "$SOLVER_LOG" "$SOLVER_STDERR_LOG" "$LIMITER_STDOUT_LOG" 2>/dev/null | tail -n 1 || true)
-szs_output=$(sed -nE 's/.*SZS[[:space:]]+output[[:space:]]+end[[:space:]]+([A-Za-z][A-Za-z0-9_-]*).*/\1/Ip' \
+szs_output=$(sed -nE 's/.*SZS[[:space:]]+output[[:space:]]+(start|end)[[:space:]]+([A-Za-z][A-Za-z0-9_-]*).*/\2/Ip' \
     "$SOLVER_LOG" "$SOLVER_STDERR_LOG" "$LIMITER_STDOUT_LOG" 2>/dev/null | tail -n 1 || true)
 # Solver-enforced limits can fire before the external limiter. Vampire's
 # non-portfolio mode reports a termination reason without an SZS status.

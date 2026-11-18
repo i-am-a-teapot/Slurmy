@@ -75,6 +75,11 @@ exit '''+str(code)+'\n')
         row=self.run_pair('% szs STATUS ASS(TMO,THM)\n','no-success',code=0)
         self.assertEqual(row['szs_status'],'Assumed(Timeout,Theorem)')
 
+    def test_hash_prefixed_status_and_start_only_dataform_are_recognized(self):
+        row=self.run_pair('0.00/0.01   # SZS status Theorem\n0.00/0.01   # SZS output start CNFRefutation\n','ok',code=0)
+        self.assertEqual(row['szs_status'],'Theorem')
+        self.assertEqual(row['szs_output'],'CNFRefutation')
+
     def test_vampire_internal_timeout_on_stdout_or_stderr(self):
         for stderr in (False,True):
             with self.subTest(stderr=stderr):
