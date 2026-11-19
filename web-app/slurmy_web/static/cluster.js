@@ -290,12 +290,17 @@ function clusterTasksForUser(data) {
       meter.value = node.allocated;
       used.append(meter);
       const name = document.createElement('td');
-      const details = document.createElement('details');
-      details.className = 'cluster-node-jobs-inline';
-      details.open = expandedNodes.has(node.name);
-      const summary = document.createElement('summary');
-      summary.textContent = node.name;
-      details.append(summary);
+      const toggle = document.createElement('button');
+      toggle.type = 'button';toggle.className = 'cluster-node-toggle';toggle.textContent = node.name;
+      toggle.setAttribute('aria-expanded', String(expandedNodes.has(node.name)));
+      const tasksId = `cluster-node-tasks-${node.name}`;
+      toggle.setAttribute('aria-controls', tasksId);
+      const details = document.createElement('section');
+      details.id = tasksId;details.className = 'cluster-node-task-panel';
+      details.classList.toggle('collapsed', !expandedNodes.has(node.name));
+      details.setAttribute('aria-label', `Running tasks on ${node.name}`);
+      const header = document.createElement('h3');header.className = 'collapse-header';header.hidden = true;
+      header.textContent = `Running tasks on ${node.name}`;details.append(header);
       const onNode = running.filter(job => job.hostnames.includes(node.name));
       const list = document.createElement('div');
       list.className = 'cluster-node-job-list';
@@ -326,11 +331,19 @@ function clusterTasksForUser(data) {
       }
       if (!onNode.length) list.textContent = 'No running tasks on this node.';
       details.append(list);
-      details.addEventListener('toggle', () => {if (details.open) expandedNodes.add(node.name); else expandedNodes.delete(node.name);});
-      name.append(details);
+      toggle.addEventListener('click', () => {
+        const collapsed = window.SlurmySections ? !window.SlurmySections.isCollapsed(details) : !details.classList.contains('collapsed');
+        if (window.SlurmySections) window.SlurmySections.toggle(details, collapsed);
+        else details.classList.toggle('collapsed', collapsed);
+        toggle.setAttribute('aria-expanded', String(!collapsed));
+        if (collapsed) expandedNodes.delete(node.name);else expandedNodes.add(node.name);
+      });
+      name.append(toggle);
       const nodeRow = row([name, node.state, used, node.idle, node.other, node.total,
                            `${(node.memory_mib / 1024).toFixed(0)} GiB`]);
-      nodes.append(nodeRow);
+      const expansion = document.createElement('td');expansion.colSpan = 7;expansion.className = 'cluster-node-expansion';expansion.append(details);
+      const expansionRow = row([expansion]);expansionRow.className = 'cluster-node-expansion-row';
+      nodes.append(nodeRow, expansionRow);
     }
     if (!nodes.children.length) empty(nodes, 7, nodeScope.value === 'all' ? 'No matching nodes.' : 'No nodes currently running matching tasks.');
 
