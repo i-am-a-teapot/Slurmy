@@ -212,7 +212,7 @@ def command_paths(command, mapping):
     return command
 
 
-def import_bundle(stream, name):
+def import_bundle(stream, name, selected_host=None):
     if not isinstance(name, str) or not re.fullmatch(r'[a-z0-9][a-z0-9-]*', name):
         raise ValueError('Workflow name: use lowercase letters, numbers and hyphens.')
     destination = workflows.USER_RUNS / name
@@ -315,6 +315,12 @@ def import_bundle(stream, name):
         host = workflows.alias(settings.get('host') or 'datalab'); partition = workflows.alias(settings.get('partition') or 'CPU-amd')
         reservation = workflows.alias(settings['reservation']) if settings.get('reservation') else ''
         account = workflows.alias(settings['account']) if settings.get('account') else ''
+        if selected_host is not None:
+            from .accounts import memberships, choose
+            host = workflows.alias(selected_host)
+            # Resolve the portable preference against the importing user's memberships.
+            available = memberships(host)['accounts']
+            account = choose(available, account or None)
         computer_info = settings.get('get_computer_info', True)
         if not isinstance(computer_info, bool):
             raise ValueError('Invalid computer information setting in workflow archive.')

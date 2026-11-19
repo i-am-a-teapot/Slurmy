@@ -569,3 +569,14 @@ expresses the placement/isolation policy. Selecting a dedicated node suggests
 all node cores with dedicated sockets off; selecting dedicated sockets suggests
 one socket's cores. Existing saved core choices are kept until the user changes
 placement.
+
+The workflow editor discovers SLURM account memberships for the currently selected
+SSH user using a read-only `sacctmgr show association` query. Results are cached
+per host for five minutes. New workflows prefer `cpuopt` (or the first available
+non-default account); saved accessible choices are preserved. When only `default`
+is available, the account control is hidden. Lookup failures show a retry action
+and do not masquerade as default-only membership. Portable imports preserve an
+available account preference or select an available replacement for the importing
+user, updating both JSON and Makefile. Membership discovery is required during
+GUI import, so an unavailable cluster produces a retryable import error instead
+of silently keeping an unauthorized account.

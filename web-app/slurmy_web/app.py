@@ -989,6 +989,11 @@ def create_app():
         supported = check_cores(selected_host, selected_partition, int(requested))
         return jsonify(max_cores=supported)
 
+    @app.get('/api/slurm-accounts')
+    def slurm_accounts():
+        from .accounts import memberships
+        return jsonify(memberships(host()))
+
     @app.post('/api/partition-core-topology')
     def partition_core_topology():
         from check_threads import dedicated_core_topology
@@ -1200,7 +1205,7 @@ def create_app():
         if upload is None:
             raise ValueError('Choose a portable workflow .tgz file.')
         try:
-            destination, count = import_bundle(upload.stream, request.form.get('name', ''))
+            destination, count = import_bundle(upload.stream, request.form.get('name', ''), selected_host=host())
         except (tarfile.TarError, UnicodeError, json.JSONDecodeError) as exc:
             raise ValueError('Invalid portable workflow archive.') from exc
         return jsonify(directory=str(destination), count=count), 201

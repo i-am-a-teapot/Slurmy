@@ -46,6 +46,18 @@ class PortableWorkflowTests(unittest.TestCase):
         with patch.object(portable.subprocess,'run',side_effect=remote):
             return portable.export_bundle(self.workflow,'test-host')
 
+    def test_import_resolves_account_for_current_cluster_user(self):
+        from slurmy_web import accounts
+        for available,expected in [(['default'],''),(['other','default'],'other'),(['cpuopt','default'],'cpuopt')]:
+            with self.subTest(accounts=available):
+                bundle=self.bundle();self.addCleanup(bundle.close)
+                with patch.object(accounts,'memberships',return_value={'accounts':available}) as lookup:
+                    imported,_=portable.import_bundle(bundle,'account-'+(expected or 'default'),selected_host='current-host')
+                lookup.assert_called_once_with('current-host')
+                self.assertEqual(workflows.decisions(imported)['account'],expected)
+                self.assertIn('SLURMY_ACCOUNT := '+expected,(imported/'Makefile').read_text())
+                self.assertNotIn('host',json.loads((imported/'workflow.json').read_text()))
+
     def test_zero_limit_omission_choices_survive_portable_round_trip_and_copy(self):
         from slurmy import generate
         with (self.workflow/'jobpairs.csv').open() as stream:row=next(csv.DictReader(stream))
@@ -229,7 +241,8 @@ class PortableWorkflowTests(unittest.TestCase):
             self.assertIn('original.slurmy.tgz',exported.headers['Content-Disposition'])
             content=exported.data;exported.close()
             self.assertGreater(len(content),2*1024**2)
-            response=client.post('/api/workflows/import',data={'name':'uploaded','workflow':(io.BytesIO(content),'workflow.slurmy.tgz')},headers={'X-CSRF-Token':'test'})
+            with patch('slurmy_web.accounts.memberships',return_value={'accounts':['default']}):
+                response=client.post('/api/workflows/import',data={'name':'uploaded','workflow':(io.BytesIO(content),'workflow.slurmy.tgz')},headers={'X-CSRF-Token':'test'})
             self.assertEqual(response.status_code,201,response.json)
             self.assertEqual(response.json['count'],1)
             self.assertTrue((Path(response.json['directory'])/'jobpairs.csv').is_file())

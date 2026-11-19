@@ -46,6 +46,26 @@ if(document.body.dataset.page==='new'){
  function fill(node,values){for(const [name,value] of Object.entries(values||{})){const field=node.querySelector(`[name="${name}"]`);if(field){if(name==='cores')setCoreRequest(field,value??'1');else field.value=name.startsWith('omit_')?String(value||false).toLowerCase():(value??'');field.refreshShell?.();}}if(node.matches('.configuration')){configurationTitle(node);updateSolverStatus(node);queueMicrotask(()=>checkThreads(node.querySelector('[name="threads_per_core"]')));}}
  for(const name of ['name','partition','account','reservation','batch_size','max_outstanding','pair_order','mode','jobpairs','configurations_file','limiter_mode','limiter_file','limiter']){const field=form.querySelector(`[name="${name}"]`);if(field&&initial[name]!==undefined)field.value=initial[name];}
  $('[name="get_computer_info"]').checked=initial.get_computer_info!==false;
+ const accountField=$('#slurm-account-field'),accountSelect=form.querySelector('[name="account"]'),accountLoading=$('#slurm-account-loading'),accountStatus=$('#slurm-account-status'),accountRetry=$('#slurm-account-retry');
+ let accountsReady=false;
+ async function loadAccounts(){
+  accountsReady=false;accountRetry.hidden=true;accountLoading.hidden=false;accountLoading.textContent='Checking SLURM account memberships…';accountSelect.disabled=true;
+  try{
+   const result=await api('/api/slurm-accounts?'+params({host:rootValue('host')}));
+   const requested=accountSelect.dataset.loaded?accountSelect.value:(editing?(initial.account||''):undefined);
+   accountSelect.replaceChildren(new Option('Cluster default',''));
+   for(const name of result.accounts)accountSelect.add(new Option(name,name));
+   const selected=result.accounts.includes(requested)?requested:(requested===''&&result.accounts.includes('default')?'':result.preferred);
+   accountSelect.value=selected;accountSelect.dataset.loaded='true';
+   accountField.hidden=result.accounts.every(name=>name==='default');
+   accountStatus.textContent=(requested&&requested!==selected?`“${requested}” is unavailable for this cluster user; using ${selected||'the cluster default'}. `:'')+'Accounts available to your cluster user. '+(result.cached?'Checked within the last five minutes.':'Memberships just checked.');
+   accountLoading.hidden=true;accountsReady=true;
+  }catch(error){accountField.hidden=true;accountLoading.textContent=error.message;accountRetry.hidden=false;}
+  finally{accountSelect.disabled=false;updateStepStates();}
+ }
+ accountRetry.addEventListener('click',loadAccounts);
+ loadAccounts();
+
  $('[name="limiter_mode"]').value='inline';$('[name="limiter_file"]').value='';
  if(!editing&&!initial.limiter){$('[name="limiter_mode"]').value='inline';$('[name="limiter"]').value=`${repoRoot}/implementation/build/runsolver/runsolver --cpu-limit {{cpu_limit}} --wall-clock-limit {{wc_limit}} --rss-swap-limit {{mem_limit_mib}} --timestamp --add-eof --watcher-data {{watcher_log}} --var {{var_file}} --solver-data {{solver_log}} {{solver_command}}`;}
  for(const values of initial.configurations||[]){const card=add('configuration-template','configurations');fill(card,{...values,solver_name:values.solver_name||values.command?.trim().split(/\s+/)[0]?.split('/').pop()||''});const resource=(initial.resources||[]).find(item=>item.role==='solver'&&item.root===values.solver_directory);if(resource)fill(card,{build_mode:resource.mode,build_source:resource.source,build_script:resource.script,build_policy:resource.build_policy||'always'});}
@@ -469,6 +489,7 @@ if(document.body.dataset.page==='new'){
   acceptedBatchWarning=JSON.stringify(payload());
  }
  async function validSection(){
+  if(step===0&&!accountsReady)throw new Error('Wait for SLURM account lookup, or retry it before continuing.');
   if(step===1&&rootValue('mode')==='interactive'&&!$('#configurations .configuration'))throw new Error('Add a solver configuration or copy one from an existing workflow before continuing.');
   if(step===1&&rootValue('mode')==='interactive')await Promise.all([...document.querySelectorAll('.configuration')].map(waitForPlacement));
   const inputs=[...sections[step].querySelectorAll('input,textarea,select')].filter(n=>n.type!=='hidden'&&!n.closest('[hidden]'));
