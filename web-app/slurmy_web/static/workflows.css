@@ -550,7 +550,7 @@ details[data-section-state="closing"] > summary::before { transform: rotate(0deg
 
 /* Single-line controls share a height wherever they sit alongside each other. */
 :root { --control-height: 40px; }
-:is(.path-input-row,.tools,.cluster-controls,.dispatch-controls,.pagination,.path-browser-controls,.path-location,.dialog-actions,.topbar form) :is(input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]):not([type="file"]),select:not([multiple]),button,.button),
+:is(.path-input-row,.tools,.cluster-controls,.dispatch-controls,.pagination,.path-browser-controls,.path-location,.dialog-actions,.topbar form) :is(input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]):not([type="file"]),select:not([multiple]),button,.button):not(.split-menu *),
 .glob-row > .remove {
   box-sizing: border-box;
   height: var(--control-height);
@@ -558,7 +558,7 @@ details[data-section-state="closing"] > summary::before { transform: rotate(0deg
   line-height: 20px;
   padding-block: 9px;
 }
-:is(.path-input-row,.tools,.cluster-controls,.dispatch-controls,.pagination,.dialog-actions) :is(button,.button) {
+:is(.path-input-row,.tools,.cluster-controls,.dispatch-controls,.pagination,.dialog-actions) :is(button,.button):not(.split-menu *) {
   display: inline-flex;
   align-items: center;
   justify-content: center;

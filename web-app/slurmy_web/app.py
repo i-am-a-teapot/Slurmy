@@ -975,7 +975,9 @@ def create_app():
     @app.post('/api/suggest-batch-size')
     def suggest_batch_size():
         from .batch_suggestion import suggest
-        return jsonify(suggest(request.get_json() or {}))
+        data = dict(request.get_json() or {})
+        data['host'] = workflows.alias(request.args.get('host') or data.get('host') or host())
+        return jsonify(suggest(data))
 
     @app.post('/api/validate-solver-cores')
     def validate_solver_cores():

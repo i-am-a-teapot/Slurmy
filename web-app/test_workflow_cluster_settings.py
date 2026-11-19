@@ -17,6 +17,19 @@ from slurmy_archives import tptp_relative, browse_cluster_tptp, tptp_collection_
 
 
 class ClusterSettingsTests(unittest.TestCase):
+    def test_batch_suggestion_uses_selected_global_host_without_workflow_host_field(self):
+        from slurmy_web.app import create_app
+        with patch.object(workflows,'migrate_user_runs'):
+            client=create_app().test_client()
+        with client.session_transaction() as session:session['csrf']='test'
+        for query,payload,expected in [({'host':'datalabGeoff'},{},'datalabGeoff'),
+                                       ({},{'host':'another-host'},'another-host'),
+                                       ({'host':'datalabGeoff'},{'host':'old-host'},'datalabGeoff')]:
+            with patch('slurmy_web.batch_suggestion.suggest',return_value={'batch_size':1}) as suggest:
+                response=client.post('/api/suggest-batch-size',query_string=query,json=dict(partition='CPU-amd',**payload),headers={'X-CSRF-Token':'test'})
+                self.assertEqual(response.status_code,200,response.json)
+                self.assertEqual(suggest.call_args.args[0]['host'],expected)
+
     def test_new_dataset_root_and_computer_report_generation(self):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)
