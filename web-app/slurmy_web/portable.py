@@ -123,7 +123,7 @@ def export_bundle(directory, host):
                    builds=[{k: str(v) if isinstance(v, Path) else v for k, v in asdict(build).items()} for build in builds],
                    limiter=limiter, axioms=axioms, shared_roots=sorted(shared_roots), default_tptp_root=TPTP_DEFAULT_ROOT,
                    settings={key: data.get(key, default) for key, default in
-                             [('host', host), ('partition', 'CPU-amd'), ('reservation', ''),
+                             [('host', host), ('partition', 'CPU-amd'), ('reservation', ''), ('account', ''),
                               ('batch_size', 1), ('max_outstanding', 50), ('get_computer_info', True)]})
     payload['settings']['host'] = host
     output = tempfile.TemporaryFile()
@@ -315,6 +315,7 @@ def import_bundle(stream, name):
         settings = payload['settings']
         host = workflows.alias(settings.get('host') or 'datalab'); partition = workflows.alias(settings.get('partition') or 'CPU-amd')
         reservation = workflows.alias(settings['reservation']) if settings.get('reservation') else ''
+        account = workflows.alias(settings['account']) if settings.get('account') else ''
         computer_info = settings.get('get_computer_info', True)
         if not isinstance(computer_info, bool):
             raise ValueError('Invalid computer information setting in workflow archive.')
@@ -339,12 +340,12 @@ def import_bundle(stream, name):
         check_pairs.unlink();check_builds.unlink()
 
         repo = os.path.relpath(workflows.REPO, destination)
-        makefile = f'REPO_ROOT := {repo}\nBATCH_SIZE := {batch}\nPAIR_ORDER := {pair_order}\nGET_COMPUTER_INFO := {str(computer_info).lower()}\nSLURMY_MAX_OUTSTANDING := {maximum}\nSLURMY_HOST := {host}\nSLURMY_PARTITION := {partition}\nSLURMY_RESERVATION := {reservation}\n'
+        makefile = f'REPO_ROOT := {repo}\nBATCH_SIZE := {batch}\nPAIR_ORDER := {pair_order}\nGET_COMPUTER_INFO := {str(computer_info).lower()}\nSLURMY_MAX_OUTSTANDING := {maximum}\nSLURMY_HOST := {host}\nSLURMY_PARTITION := {partition}\nSLURMY_RESERVATION := {reservation}\nSLURMY_ACCOUNT := {account}\n'
         if axiom_lines:
             (staging/'axiom-globs.txt').write_text('\n'.join(axiom_lines)+'\n');makefile += 'AXIOMS := axiom-globs.txt\n'
         makefile += 'include $(REPO_ROOT)/implementation/templates/workflow.mk\n'
         (staging/'Makefile').write_text(makefile)
-        data = dict(get_computer_info=computer_info, name=name, host=host, partition=partition, reservation=reservation, batch_size=batch, max_outstanding=maximum, pair_order=pair_order,
+        data = dict(get_computer_info=computer_info, name=name, host=host, partition=partition, reservation=reservation, account=account, batch_size=batch, max_outstanding=maximum, pair_order=pair_order,
                     mode='jobpairs', jobpairs=str(destination/'jobpairs.csv'), building_mode='existing', building_file=str(destination/'building.txt'),
                     limiter_mode='inline', limiter=limiter, axiom_mode='custom' if axiom_lines else 'cluster', axiom_globs=axiom_lines, _created_at=time.time())
         if payload.get('editor_mode') in {'interactive', 'configurations'} and len(shared_roots) <= 1:

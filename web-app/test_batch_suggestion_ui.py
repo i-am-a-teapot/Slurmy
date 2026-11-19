@@ -22,6 +22,12 @@ assert.match(output,/no empty batches are created/);assert.match(output,/20 comp
 assert(nodes.some(n=>n.className==='math-function'&&n.text==='floor'));
 assert(nodes.some(n=>n.className==='math-number'&&n.text==='640'));
 assert(nodes.some(n=>n.className==='math-operator'&&n.text==='÷'));
+data.account_submit_limit=null;data.account='cpuopt';data.account_free_slots=null;
+data.account_active_tasks=60;data.workflow_submit_limit=100;data.assumed_parallelism=100;data.submission_budget=100;
+context.renderBatchExplanation(data);
+const accountOutput=text(content);
+assert.match(accountOutput,/No account submission cap was reported for cpuopt/);
+assert.doesNotMatch(accountOutput,/50 account task slots/);
 '''
         source=Path(__file__).parent/'slurmy_web/static/builder.js'
         subprocess.run(['node','-e',script,str(source)],check=True,capture_output=True,text=True)

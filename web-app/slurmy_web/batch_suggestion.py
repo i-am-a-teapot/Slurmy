@@ -8,23 +8,25 @@ from . import workflows
 
 
 class Topology(list):
-    def __init__(self, values, active_tasks=None):
+    def __init__(self, values, active_tasks=None, submit_limit=50):
         super().__init__(values)
         self.active_tasks = active_tasks
+        self.submit_limit = submit_limit
 
 
-def partition_nodes(host, partition):
+def partition_nodes(host, partition, account=''):
     host, partition = workflows.alias(host), workflows.alias(partition)
     import slurm_api
+    submit_limit = slurm_api.account_limit(host, account, partition)
     if slurm_api.enabled(host):
         user = slurm_api.credentials(host)['user']
-        active = sum(j.get('user_name') == user for j in slurm_api.submission_queue(host))
-        return Topology(slurm_api.partition_nodes(host, partition), active)
+        active = sum(j.get('user_name') == user and (j.get('account') or 'default') == (account or 'default') for j in slurm_api.submission_queue(host))
+        return Topology(slurm_api.partition_nodes(host, partition), active, submit_limit)
     try:
         result = subprocess.run(
             ['ssh', *connection_options(), '-T', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=10', '--', host,
              f"set -o pipefail; sinfo -p {partition} -N -h -o '%N|%X|%Y|%Z' && "
-             "if count=$(squeue -h -r -u \"$USER\" -o '%i' | awk 'NF {n++} END {print n+0}'); then printf '@QUEUE|%s\\n' \"$count\"; fi"],
+             f"if count=$(squeue -h -r -u \"$USER\" -A {account or 'default'} -o '%i' | awk 'NF {{n++}} END {{print n+0}}'); then printf '@QUEUE|%s\\n' \"$count\"; fi"],
             text=True, capture_output=True, timeout=25, check=False)
     except (OSError, subprocess.TimeoutExpired) as exc:
         raise ValueError(f'Cannot inspect partition topology: {exc}') from exc
@@ -44,10 +46,10 @@ def partition_nodes(host, partition):
                                 threads_per_core=int(fields[3]))
     if not nodes:
         raise ValueError('No compute nodes found in the selected partition.')
-    return Topology(nodes.values(), active_tasks)
+    return Topology(nodes.values(), active_tasks, submit_limit)
 
 
-def estimate(configurations, total_pairs, maximum_outstanding, nodes):
+def estimate(configurations, total_pairs, maximum_outstanding, nodes, account_submit_limit=50):
     if total_pairs < 1:
         raise ValueError('No solver-problem pairs match the selected sources.')
     capacities = []
@@ -89,9 +91,10 @@ def estimate(configurations, total_pairs, maximum_outstanding, nodes):
     if not capacities:
         raise ValueError('Add at least one solver configuration.')
     hardware = min(capacities)
-    parallelism = min(hardware, positive(str(maximum_outstanding), 'maximum submitted SLURM tasks'), 50)
+    ceiling = [account_submit_limit] if account_submit_limit is not None else []
+    parallelism = min(hardware, positive(str(maximum_outstanding), 'maximum submitted SLURM tasks'), *ceiling)
     assumed_hardware = max(1, hardware // 2)
-    assumed_parallelism = min(assumed_hardware, positive(str(maximum_outstanding), 'maximum submitted SLURM tasks'), 50)
+    assumed_parallelism = min(assumed_hardware, positive(str(maximum_outstanding), 'maximum submitted SLURM tasks'), *ceiling)
     return dict(batch_size=max(1, (total_pairs + assumed_parallelism - 1) // assumed_parallelism),
                 assumed_hardware_parallelism=assumed_hardware, assumed_parallelism=assumed_parallelism,
                 total_pairs=total_pairs, node_count=len(nodes), hardware_parallelism=hardware,
@@ -118,14 +121,16 @@ def suggest(data):
         group_counts = [len(problems)]*len(configurations)
     else:
         raise ValueError('Choose how to define solver-problem pairs.')
-    nodes = partition_nodes(host, partition)
-    result = estimate(configurations, count, data.get('max_outstanding', 50), nodes)
+    account = workflows.alias(data['account']) if data.get('account') else ''
+    nodes = partition_nodes(host, partition, account) if account else partition_nodes(host, partition)
+    submit_limit = getattr(nodes, 'submit_limit', 50 if not account or account=='default' else None)
+    result = estimate(configurations, count, data.get('max_outstanding', 50), nodes, submit_limit)
     balance = result['batch_size']
     options = (data.get('pair_order') or 'solver-major', data.get('max_outstanding', 50), nodes,
                getattr(nodes, 'active_tasks', None))
-    fit = submission_fit(configurations, group_counts, data.get('batch_size') or balance, *options)
+    fit = submission_fit(configurations, group_counts, data.get('batch_size') or balance, *options, account_submit_limit=submit_limit)
     selected = max(balance, fit['recommended_batch_size'] or 1)
-    suggestion = submission_fit(configurations, group_counts, selected, *options)
+    suggestion = submission_fit(configurations, group_counts, selected, *options, account_submit_limit=submit_limit)
     result.update(fit)
     result.update(batch_size=selected, balance_batch_size=balance,
                   fit_batch_size=fit['recommended_batch_size'],
@@ -134,13 +139,13 @@ def suggest(data):
     # One recommendation is used by the field, explanation and submission warning.
     result.update(configuration_count=len(configurations), problem_count=None if mode=='jobpairs' else len(problems),
                   configuration_names=[str(c.get('solver_name') or f'Solver {i+1}') for i,c in enumerate(configurations)],
-                  workflow_submit_limit=int(data.get('max_outstanding', 50)))
+                  workflow_submit_limit=int(data.get('max_outstanding', 50)), account=account or 'default')
     result['recommended_batch_size'] = selected if fit['recommended_batch_size'] else None
     result['recommended_batches'] = suggestion['estimated_batches'] if fit['recommended_batch_size'] else None
     return result
 
 
-def submission_fit(configurations, counts, batch_size, pair_order, maximum_outstanding, nodes, active_tasks=None):
+def submission_fit(configurations, counts, batch_size, pair_order, maximum_outstanding, nodes, active_tasks=None, account_submit_limit=50):
     """Count the same homogeneous batches the core planner creates."""
     from collections import Counter
     groups = Counter()
@@ -159,8 +164,9 @@ def submission_fit(configurations, counts, batch_size, pair_order, maximum_outst
                       0 if cpus.lower() == 'auto' else int(cpus), dedicated_cpu, dedicated_node)
         groups[allocation] += count
     size = positive(str(batch_size), 'solver-problem pairs per batch')
-    free = max(0, 50-active_tasks) if active_tasks is not None else 50
-    budget = min(50, free, positive(str(maximum_outstanding), 'maximum submitted SLURM tasks'))
+    window = positive(str(maximum_outstanding), 'maximum submitted SLURM tasks')
+    free = (max(0, account_submit_limit-active_tasks) if active_tasks is not None else account_submit_limit) if account_submit_limit is not None else None
+    budget = min(free, window) if free is not None else window
     def count_batches(size): return sum((count+size-1)//size for count in groups.values())
     batches = count_batches(size)
     recommendation = None
@@ -171,7 +177,7 @@ def submission_fit(configurations, counts, batch_size, pair_order, maximum_outst
             if count_batches(middle) <= budget: high = middle
             else: low = middle+1
         recommendation = low
-    return dict(estimated_batches=batches, submission_budget=budget, account_submit_limit=50,
+    return dict(estimated_batches=batches, submission_budget=budget, account_submit_limit=account_submit_limit,
                 minimum_batches=len(groups), group_pair_counts=list(groups.values()), account_active_tasks=active_tasks, account_free_slots=free,
                 recommended_batch_size=recommendation,
                 recommended_batches=count_batches(recommendation) if recommendation else None)

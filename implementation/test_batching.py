@@ -182,10 +182,12 @@ fi
                 (bin_dir/'sinfo').write_text('#!/bin/bash\necho "2 8 2 64000"\n')
                 for executable in bin_dir.iterdir():executable.chmod(0o755)
                 subprocess.run(['bash',str(REPO/'implementation/templates/remote_submit.sh'),
-                    'test-job','CPU-amd','32','test-job',base64.b64encode(b'Test job').decode()],
+                    'test-job','CPU-amd','32','test-job',base64.b64encode(b'Test job').decode(),'0','-','0','cpuopt'],
                     env={**os.environ,'HOME':str(home),'PATH':str(bin_dir)+':'+os.environ['PATH']},
                     check=True,capture_output=True,text=True)
                 options=json.loads((job/'submitted-options.json').read_text())
+                self.assertIn('--account=cpuopt',options)
+                self.assertIn('SAVED_ACCOUNT=cpuopt',(job/'submission_context.sh').read_text())
                 self.assertEqual('--exclusive' in options,any(node for _,node in flags))
                 isolation='node' if any(node for _,node in flags) else 'socket' if any(socket for socket,_ in flags) else 'shared'
                 self.assertIn(f'--comment=slurmy:v1:calls=2:batches=1:cores=2:isolation={isolation}:batch=0',options)

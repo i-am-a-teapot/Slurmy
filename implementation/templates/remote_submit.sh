@@ -34,12 +34,22 @@ else
 fi
 cd "$JOB_DIR"
 RESUME_INCOMPLETE=${6:-0}
+ACCOUNT=${9:--}
+[[ "$ACCOUNT" != - ]] || ACCOUNT=
+[[ -z "$ACCOUNT" || "$ACCOUNT" =~ ^[A-Za-z0-9][A-Za-z0-9_.-]*$ ]] || { echo 'Invalid SLURM account.' >&2; exit 2; }
+export SLURMY_ACCOUNT="$ACCOUNT"
 RESERVATION=${7:--}
 [[ "$RESERVATION" != - ]] || RESERVATION=
 [[ -z "$RESERVATION" || "$RESERVATION" =~ ^[A-Za-z0-9][A-Za-z0-9_.-]*$ ]] || { echo 'Invalid reservation.' >&2; exit 2; }
-if [[ ! -f submission_context.sh ]]; then
-    printf 'SAVED_PARTITION=%q\nSAVED_MAX_OUTSTANDING=%q\nSAVED_JOB_PREFIX=%q\nSAVED_JOB_NAME_B64=%q\nSAVED_RESERVATION=%q\n' \
-        "$PARTITION" "${3:-32}" "$JOB_PREFIX" "${5:-}" "$RESERVATION" > submission_context.sh
+if [[ -f submission_context.sh ]]; then
+    source ./submission_context.sh
+    # Resume the committed job under its original account, including an empty
+    # default. A later workflow edit must not move its unfinished batches.
+    ACCOUNT=${SAVED_ACCOUNT-}
+    export SLURMY_ACCOUNT="$ACCOUNT"
+else
+    printf 'SAVED_PARTITION=%q\nSAVED_MAX_OUTSTANDING=%q\nSAVED_JOB_PREFIX=%q\nSAVED_JOB_NAME_B64=%q\nSAVED_RESERVATION=%q\nSAVED_ACCOUNT=%q\n' \
+        "$PARTITION" "${3:-32}" "$JOB_PREFIX" "${5:-}" "$RESERVATION" "$ACCOUNT" > submission_context.sh
 fi
 if [[ -f .stopped ]]; then
     echo 'This job is stopped. Use Resume job before submitting more batches.' >&2
@@ -315,6 +325,7 @@ for batch in batches/batch_*.sh; do
         --array=0-0 --export="ALL,SLURMY_BATCH_ID=$BATCH_ID" --output=logs/slurm_%A_%a.out
         --signal=B:TERM@30)
     if [[ -n "$RESERVATION" ]]; then OPTIONS+=(--reservation="$RESERVATION"); fi
+    if [[ -n "$ACCOUNT" ]]; then OPTIONS+=(--account="$ACCOUNT"); fi
     if (( EXCLUSIVE_CPU )); then
         # With CR_CORE, reject partially occupied sockets during selection.
         # A socket-sized core count alone can otherwise span two partial sockets.

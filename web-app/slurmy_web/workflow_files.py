@@ -15,7 +15,7 @@ FILES = ('jobpairs.csv', 'configurations.csv', 'problem-globs.txt', 'axiom-globs
          'building.txt', 'resource_limiter_template.txt', 'Makefile')
 SETTINGS = {'GET_COMPUTER_INFO': 'get_computer_info', 'BATCH_SIZE': 'batch_size', 'PAIR_ORDER': 'pair_order',
             'SLURMY_MAX_OUTSTANDING': 'max_outstanding', 'SLURMY_HOST': 'host',
-            'SLURMY_PARTITION': 'partition', 'SLURMY_RESERVATION': 'reservation'}
+            'SLURMY_PARTITION': 'partition', 'SLURMY_RESERVATION': 'reservation', 'SLURMY_ACCOUNT': 'account'}
 ASSIGNMENTS = re.compile(r'(?m)^(' + '|'.join([*SETTINGS, 'REPO_ROOT', 'AXIOMS']) + r')[ \t]*(?::|\?)?=[ \t]*([^\n]*)$')
 
 
@@ -44,7 +44,7 @@ def makefile_settings(data, current, replacement):
         found[key] = value.strip()
     # Missing assignments have the same defaults as the generated workflow.
     defaults = dict(batch_size='1', pair_order='solver-major', max_outstanding='50',
-                    host='datalab', partition='CPU-amd', reservation='', get_computer_info='true')
+                    host='datalab', partition='CPU-amd', reservation='', account='', get_computer_info='true')
     for key, field in SETTINGS.items():
         data[field] = found.get(key, defaults[field])
     if data['get_computer_info'].lower() not in {'true', 'false', '1', '0', 'yes', 'no'}:

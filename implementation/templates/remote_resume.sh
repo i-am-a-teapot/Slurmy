@@ -14,7 +14,7 @@ cd "$job"
 source ./submission_context.sh
 rm -- .stopped
 # Return the saved context to the local driver; never detach on the head node.
-python3 - "$1" "$SAVED_PARTITION" "$SAVED_MAX_OUTSTANDING" "$SAVED_JOB_PREFIX" "$SAVED_JOB_NAME_B64" 1 "${SAVED_RESERVATION:--}" <<'SLURMY_RESUME'
+python3 - "$1" "$SAVED_PARTITION" "$SAVED_MAX_OUTSTANDING" "$SAVED_JOB_PREFIX" "$SAVED_JOB_NAME_B64" 1 "${SAVED_RESERVATION:--}" 0 "${SAVED_ACCOUNT:--}" <<'SLURMY_RESUME'
 import json,sys
 print('SLURMY_RESUME_ARGS '+json.dumps(sys.argv[1:]))
 SLURMY_RESUME

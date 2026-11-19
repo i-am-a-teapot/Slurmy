@@ -7,6 +7,7 @@ sbatch itself, so simultaneous Slurmy submitters cannot both claim one slot.
 from __future__ import annotations
 
 import fcntl
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -28,7 +29,7 @@ OBSERVATION_SECONDS = 300
 
 
 def command(argv: list[str], timeout: int = 20) -> subprocess.CompletedProcess[str]:
-    if os.environ.get('SLURMY_API_BRIDGE') == '1' and argv[0] in {'squeue', 'sacctmgr', 'sbatch'}:
+    if os.environ.get('SLURMY_API_BRIDGE') == '1' and argv[0] in {'squeue', 'sbatch'}:
         payload = dict(argv=argv)
         if argv[0] == 'sbatch':
             payload.update(script=Path(argv[-1]).read_text(), cwd=str(Path.cwd()), environment=dict(os.environ))
@@ -54,24 +55,32 @@ def read_json(path: Path) -> dict:
     return result if isinstance(result, dict) else {}
 
 
-def reported_limit(user: str) -> int | None:
+def association_limit(output, account, partition='', user=None):
+    limits = []
+    for line in output.splitlines():
+        fields = line.split('|')
+        if len(fields) < 4 or (user and fields[0] != user) or fields[1] != account:
+            continue
+        if fields[2] and partition and fields[2] != partition:
+            continue
+        if fields[3].isdigit() and int(fields[3]) > 0:
+            limits.append(int(fields[3]))
+    return min(limits) if limits else None
+
+
+def reported_limit(user: str, account='default', partition='') -> int | None:
     try:
         result = command(["sacctmgr", "-nP", "show", "assoc", f"user={user}",
-                          "format=User,Account,Partition,MaxSubmitJobs"], timeout=10)
+                          f"account={account}", "format=User,Account,Partition,MaxSubmitJobs"], timeout=10)
     except (OSError, subprocess.TimeoutExpired):
         return None
     if result.returncode:
         return None
-    limits = []
-    for line in result.stdout.splitlines():
-        fields = line.split("|")
-        if fields and fields[0] == user and fields[-1].isdigit() and int(fields[-1]) > 0:
-            limits.append(int(fields[-1]))
-    return min(limits) if limits else None
+    return association_limit(result.stdout, account, partition, user)
 
 
-def queue_snapshot(user: str, jobs_root: Path) -> tuple[int, int, dict[str, int]]:
-    result = command(["squeue", "-h", "-r", "-u", user, "-o", "%i|%Z|%k"])
+def queue_snapshot(user: str, jobs_root: Path, account='default') -> tuple[int, int, dict[str, int]]:
+    result = command(["squeue", "-h", "-r", "-u", user, "-A", account, "-o", "%i|%Z|%k"])
     if result.returncode:
         raise RuntimeError(result.stderr.strip() or "squeue failed")
     total = other = 0
@@ -128,6 +137,13 @@ def main() -> int:
         sbatch_args = sys.argv[5:]
     else:
         requested, sbatch_args = 0, []
+    account = os.environ.get('SLURMY_ACCOUNT') or 'default'
+    partition = os.environ.get('SLURMY_PARTITION') or ''
+    for option in sbatch_args:
+        if option.startswith('--account='): account = option.split('=', 1)[1]
+        if option.startswith('--partition='): partition = option.split('=', 1)[1]
+    if not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_.-]*', account):
+        raise SystemExit('Invalid SLURM account')
     base = Path.home() / "slurmy"
     jobs_root = base / "jobs"
     leases_dir = base / "submitters"
@@ -140,7 +156,7 @@ def main() -> int:
             lease.unlink(missing_ok=True)
             return 0
         now = time.time()
-        save_json(lease, {"job_id": job_id, "requested": requested, "updated": now})
+        save_json(lease, {"job_id": job_id, "requested": requested, "updated": now, "account": account})
         demands = {}
         for path in leases_dir.glob("*.json"):
             record = read_json(path)
@@ -148,25 +164,26 @@ def main() -> int:
                 path.unlink(missing_ok=True)
                 continue
             demand = int(record.get("requested", 0))
-            if demand > 0:
+            if demand > 0 and record.get('account', 'default') == account:
                 demands[record["job_id"]] = demand
         user = os.environ.get("USER") or command(["id", "-un"]).stdout.strip()
         try:
-            total, other, own = queue_snapshot(user, jobs_root)
+            total, other, own = queue_snapshot(user, jobs_root, account)
         except (OSError, RuntimeError, subprocess.TimeoutExpired) as exc:
             # This observation is read-only. Never submit against an unknown
             # queue, but do not kill the controller over a transient outage.
             message = str(exc).replace("\n", " ")
             print(f"WAIT|Cannot read SLURM queue; submission paused until a successful query: {message}")
             return 0
-        capacity_file = base / "submit-capacity.json"
+        partition_key = hashlib.sha256(partition.encode()).hexdigest()[:12]
+        capacity_file = base / f"submit-capacity-{account}-{partition_key}.json"
         capacity_record = read_json(capacity_file)
         if now - float(capacity_record.get("checked", 0)) > OBSERVATION_SECONDS:
-            capacity_record["reported"] = reported_limit(user)
+            capacity_record["reported"] = reported_limit(user, account, partition)
             capacity_record["checked"] = now
             save_json(capacity_file, capacity_record)
         observed = capacity_record.get("observed") if now - float(capacity_record.get("observed_at", 0)) < OBSERVATION_SECONDS else None
-        known = [value for value in (50, capacity_record.get("reported"), observed) if isinstance(value, int) and value > 0]
+        known = [value for value in (50 if account == 'default' else None, capacity_record.get("reported"), observed) if isinstance(value, int) and value > 0]
         ceiling = min(known) if known else None
         active_without_submitter = sum(count for name, count in own.items() if name not in demands)
         available = (ceiling - other - active_without_submitter) if ceiling is not None else sum(demands.values())

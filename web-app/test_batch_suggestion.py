@@ -144,6 +144,17 @@ class BatchSuggestionTests(unittest.TestCase):
         self.assertEqual(plan['recommended_batch_size'],2)
         self.assertEqual(plan['recommended_batches'],26)
 
+    def test_custom_account_without_reported_cap_can_use_a_larger_workflow_window(self):
+        result=batch.estimate([config(1)],1000,200,self.nodes,account_submit_limit=None)
+        self.assertEqual(result['assumed_parallelism'],200)
+        self.assertEqual(result['batch_size'],5)
+        plan=batch.submission_fit([config(1)],[1000],5,'solver-major',200,self.nodes,
+                                  active_tasks=60,account_submit_limit=None)
+        self.assertEqual(plan['submission_budget'],200)
+        self.assertEqual(plan['estimated_batches'],200)
+        self.assertIsNone(plan['account_submit_limit'])
+        self.assertIsNone(plan['account_free_slots'])
+
     def test_existing_account_tasks_reduce_available_slots_and_full_queue_has_no_immediate_fit(self):
         plan=batch.submission_fit([config(1)],[1000],10,'problem-major',32,self.nodes,active_tasks=40)
         self.assertEqual(plan['submission_budget'],10)

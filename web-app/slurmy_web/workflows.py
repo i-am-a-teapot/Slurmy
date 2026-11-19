@@ -107,6 +107,8 @@ def specification(data, destination_override=None, progress=None):
     host, partition = alias(data.get('host')), alias(data.get('partition'))
     reservation = alias(data['reservation'].strip()) if data.get('reservation', '').strip() else ''
     data['reservation'] = reservation
+    account = alias(data['account'].strip()) if data.get('account', '').strip() else ''
+    data['account'] = account
     batch_size = positive(str(data.get('batch_size') or 1), 'solver-problem pairs per SLURM task')
     max_outstanding = positive(str(data.get('max_outstanding', 50)), 'maximum submitted SLURM tasks')
     pair_order = data.get('pair_order') or 'solver-major'
@@ -269,7 +271,7 @@ def specification(data, destination_override=None, progress=None):
     files['Makefile'] = (f'REPO_ROOT := ../../..\nBATCH_SIZE := {batch_size}\nSLURMY_MAX_OUTSTANDING := {max_outstanding}\n'
                          + f'PAIR_ORDER := {pair_order}\nGET_COMPUTER_INFO := {str(data["get_computer_info"]).lower()}\n' +
                          f'SLURMY_HOST := {host}\n'
-                         f'SLURMY_PARTITION := {partition}\nSLURMY_RESERVATION := {reservation}\ninclude $(REPO_ROOT)/implementation/templates/workflow.mk\n')
+                         f'SLURMY_PARTITION := {partition}\nSLURMY_RESERVATION := {reservation}\nSLURMY_ACCOUNT := {account}\ninclude $(REPO_ROOT)/implementation/templates/workflow.mk\n')
     if axiom_patterns:
         files['Makefile'] = 'AXIOMS := axiom-globs.txt\n' + files['Makefile']
     if configs:
@@ -676,7 +678,7 @@ def decisions(directory, check_paths=True):
     if executable_word:
         limiter = shlex.quote(str(path_at(executable_word, directory))) + ' ' + limiter[lexer.instream.tell():]
     return resource_roles(dict(name=directory.name, host=setting('SLURMY_HOST', 'datalab'),
-                reservation=setting('SLURMY_RESERVATION', ''),
+                reservation=setting('SLURMY_RESERVATION', ''), account=setting('SLURMY_ACCOUNT', ''),
                 partition=setting('SLURMY_PARTITION', 'CPU-amd'), batch_size=setting('BATCH_SIZE', '1'),
                 max_outstanding=setting('SLURMY_MAX_OUTSTANDING', '50'),
                 pair_order=setting('PAIR_ORDER', 'solver-major'),

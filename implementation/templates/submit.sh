@@ -40,6 +40,7 @@ ssh_stage() {
 }
 : "${SLURMY_PARTITION:?Set SLURMY_PARTITION to the SLURM partition to use}"
 [[ "$SLURMY_PARTITION" =~ ^[A-Za-z0-9_.-]+$ ]] || { echo 'Invalid partition' >&2; exit 1; }
+[[ -z ${SLURMY_ACCOUNT:-} || ${SLURMY_ACCOUNT} =~ ^[A-Za-z0-9][A-Za-z0-9_.-]*$ ]] || { echo 'Invalid SLURM account' >&2; exit 1; }
 AUTO_JOB_NAME=0
 [[ -n ${SLURMY_JOB_NAME:-} ]] || AUTO_JOB_NAME=1
 JOB_NAME_B64=$(printf '%s' "$JOB_DISPLAY_NAME" | base64 | tr -d '\r\n')
@@ -47,7 +48,7 @@ if [[ -n ${SLURMY_RESUME_JOB_ID:-} ]]; then
     JOB_ID=$SLURMY_RESUME_JOB_ID
     [[ "$JOB_ID" =~ ^[A-Za-z0-9._-]+$ ]] || { echo 'Invalid SLURMY_RESUME_JOB_ID.' >&2; exit 1; }
     echo "Resuming accepted batches for $JOB_ID; no inputs are rebuilt or uploaded."
-    "$SLURMY_PYTHON" "$ASSETS/local_dispatch.py" "$HOST" "$JOB_ID" "$SLURMY_PARTITION" "$MAX_OUTSTANDING" "$JOB_PREFIX" "$JOB_NAME_B64" 0 "${SLURMY_RESERVATION:--}" "$AUTO_JOB_NAME"
+    "$SLURMY_PYTHON" "$ASSETS/local_dispatch.py" "$HOST" "$JOB_ID" "$SLURMY_PARTITION" "$MAX_OUTSTANDING" "$JOB_PREFIX" "$JOB_NAME_B64" 0 "${SLURMY_RESERVATION:--}" "$AUTO_JOB_NAME" "${SLURMY_ACCOUNT:--}"
     exit $?
 fi
 
@@ -99,4 +100,4 @@ if ! ssh_stage remote_finish_upload.sh 'Committing upload'; then
     echo "Could not confirm uploaded inputs for $JOB_ID. Retry or use Resume after reconnecting." >&2
     exit 1
 fi
-"$SLURMY_PYTHON" "$ASSETS/local_dispatch.py" "$HOST" "$JOB_ID" "$SLURMY_PARTITION" "$MAX_OUTSTANDING" "$JOB_PREFIX" "$JOB_NAME_B64" 0 "${SLURMY_RESERVATION:--}" "$AUTO_JOB_NAME"
+"$SLURMY_PYTHON" "$ASSETS/local_dispatch.py" "$HOST" "$JOB_ID" "$SLURMY_PARTITION" "$MAX_OUTSTANDING" "$JOB_PREFIX" "$JOB_NAME_B64" 0 "${SLURMY_RESERVATION:--}" "$AUTO_JOB_NAME" "${SLURMY_ACCOUNT:--}"

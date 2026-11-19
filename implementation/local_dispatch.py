@@ -23,6 +23,9 @@ def rpc(host, message):
     if argv[0] == 'squeue':
         user = slurm_api.credentials(host)['user']
         jobs = [j for j in slurm_api.submission_queue(host) if j.get('user_name') == user]
+        if '-A' in argv:
+            account = argv[argv.index('-A')+1]
+            jobs = [j for j in jobs if (j.get('account') or 'default') == account]
         format_string = argv[argv.index('-o')+1] if '-o' in argv else '%i|%Z|%k'
         formats = {'%i|%Z|%k':lambda j:'|'.join([slurm_api.job_id(j),j.get('current_working_directory',''),j.get('comment') or '']),
                    '%i|%Z':lambda j:'|'.join([slurm_api.job_id(j),j.get('current_working_directory','')]),
@@ -30,8 +33,6 @@ def rpc(host, message):
         if format_string not in formats: raise ValueError('Unsupported REST queue format.')
         stdout = '\n'.join(formats[format_string](j) for j in jobs)+'\n'
         return dict(returncode=0, stdout=stdout, stderr='')
-    if argv[0] == 'sacctmgr':
-        return dict(returncode=0, stdout=slurm_api.credentials(host)['user']+'|||50\n', stderr='')
     if argv[0] == 'scancel':
         for identifier in argv[1:]:
             import re
@@ -167,10 +168,12 @@ def _run(host, args, script=None, poll_seconds=15):
             except RuntimeError as exc:
                 print('Submission waiting locally: '+str(exc), flush=True)
                 continue
-            own = [j for j in jobs if j.get('user_name') == auth['user']]
+            account = args[8] if len(args) > 8 and args[8] != '-' else 'default'
+            own = [j for j in jobs if j.get('user_name') == auth['user'] and (j.get('account') or 'default') == account]
             directory = auth['home']+'/slurmy/jobs/'+args[0]
             active = sum(j.get('current_working_directory') == directory for j in own)
-            if len(own) < 50 and active < int(args[2]): break
+            limit = slurm_api.account_limit(host, account, args[1])
+            if (limit is None or len(own) < limit) and active < int(args[2]): break
             print('Submission waiting locally: submission window is still full; no SSH session is open.', flush=True)
 
 

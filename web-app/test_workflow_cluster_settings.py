@@ -47,7 +47,7 @@ class ClusterSettingsTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             root=Path(folder);problem=root/'example.p';problem.write_text('cnf(a,axiom,p).')
             for mode,policy in [('none','changed'),('script','changed'),('script','always')]:
-                data=dict(name='limiter-'+mode+'-'+policy,host='datalab',partition='CPU-amd',mode='interactive',
+                data=dict(name='limiter-'+mode+'-'+policy,host='datalab',partition='CPU-amd',account='cpuopt',mode='interactive',
                     batch_size=1,configurations=[dict(solver_name='Test',solver_directory=str(root),command='./solver {{problem}}',
                         wc_limit=2,cpu_limit=1,mem_limit='100MiB',cores=1)],globs=[str(problem)],building_mode='create',
                     resources=[dict(role='solver',root=str(root),mode='none'),dict(role='limiter',root=str(limiter),mode=mode,
@@ -55,6 +55,7 @@ class ClusterSettingsTests(unittest.TestCase):
                     limiter_mode='inline',limiter=str(limiter/'runsolver')+' --cpu-limit {{cpu_limit}} {{solver_command}}')
                 with patch.object(workflows,'check_requested'):
                     destination,files,count=workflows.specification(data,root/data['name'])
+                self.assertIn('SLURMY_ACCOUNT := cpuopt',files['Makefile'])
                 resource=json.loads(files['building.txt'])[1]
                 self.assertEqual(resource['build_policy'],policy)
                 self.assertEqual(bool(resource.get('recipe')),mode=='script')
@@ -65,6 +66,8 @@ class ClusterSettingsTests(unittest.TestCase):
                 for name,body in files.items():(destination/name).write_text(body)
                 generate(destination/'jobpairs.csv',destination/'building.txt',destination/'resource_limiter_template.txt')
                 settings=(destination/'submit.sh.files/submission_settings.sh').read_text()
+                if mode=='script':
+                    self.assertIn('--sbatch-option=--account=$SLURMY_ACCOUNT',(destination/'submit.sh.files/builds/run.sh').read_text())
                 self.assertIn('BUILD_COUNT_DEFAULT='+('0' if mode=='none' else '1'),settings)
 
     def test_two_solvers_use_only_1429_selected_archive_problems(self):

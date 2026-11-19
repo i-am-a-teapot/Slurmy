@@ -36,7 +36,7 @@ class PortableWorkflowTests(unittest.TestCase):
                  exclusive_cpu='false',exclusive_node='false')
         (self.workflow/'jobpairs.csv').write_text(workflows.csv_text([row]))
         (self.workflow/'resource_limiter_template.txt').write_text("'"+str(self.runtime/'limiter')+"' {{solver_command}}")
-        (self.workflow/'Makefile').write_text('SLURMY_HOST := test-host\nSLURMY_PARTITION := CPU-amd\nBATCH_SIZE := 100\nSLURMY_RESERVATION := E192-04\n')
+        (self.workflow/'Makefile').write_text('SLURMY_HOST := test-host\nSLURMY_PARTITION := CPU-amd\nBATCH_SIZE := 100\nSLURMY_RESERVATION := E192-04\nSLURMY_ACCOUNT := cpuopt\n')
 
     def bundle(self):
         # This local workflow's implicit shared axioms are absent on this test host.
@@ -54,6 +54,8 @@ class PortableWorkflowTests(unittest.TestCase):
         (self.workflow/'jobpairs.csv').write_text(workflows.csv_text([row]))
         bundle=self.bundle();self.addCleanup(bundle.close)
         imported,_=portable.import_bundle(bundle,'zero-omissions')
+        self.assertEqual(workflows.decisions(imported)['account'],'cpuopt')
+        self.assertIn('SLURMY_ACCOUNT := cpuopt',(imported/'Makefile').read_text())
         with (imported/'jobpairs.csv').open() as stream:restored=next(csv.DictReader(stream))
         for field in ('omit_cpu_limit','omit_wc_limit','omit_mem_limit'):self.assertEqual(restored[field],'true')
         card=workflows.copyable_solver_configurations(imported)[0]

@@ -21,6 +21,31 @@ _lock = threading.RLock()
 _credentials = {}
 _reads = {}
 _read_locks = {}
+_account_limits = {}
+
+
+def account_limit(host, account='', partition=''):
+    """Cache accounting-policy reads; an unreported limit is not assumed to be 50."""
+    if not account or account == 'default':
+        return 50
+    from submit_coordinator import association_limit
+    import shlex
+    key = (host, account, partition)
+    with _lock:
+        query_lock = _read_locks.setdefault(('account-policy', *key), threading.Lock())
+    with query_lock:
+        cached = _account_limits.get(key)
+        if cached and time.monotonic()-cached[0] < 300:
+            return cached[1]
+        command = 'sacctmgr -nP show assoc user="$USER" ' + shlex.join([f'account={account}', 'format=User,Account,Partition,MaxSubmitJobs'])
+        try:
+            result = subprocess.run(['ssh', *connection_options(), '-T', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=10', '--', host, command],
+                                    capture_output=True, text=True, timeout=20, check=False)
+            limit = association_limit(result.stdout, account, partition) if result.returncode == 0 else None
+        except (OSError, subprocess.TimeoutExpired):
+            limit = None
+        _account_limits[key] = (time.monotonic(), limit)
+        return limit
 _submission_metadata = {}
 
 

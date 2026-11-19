@@ -220,12 +220,15 @@ still reads private solver progress over SSH when expanding a node. Historical
 accounting and job files also retain their SSH access.
 
 REST submission bridges scheduler requests from the short remote preparation
-wave to `local_dispatch.py` over framed messages. The account-wide filesystem
+wave to `local_dispatch.py` over framed messages. The per-user filesystem
 lock stays held across the queue check and POST, preserving fairness between
 SSH and REST clients. Every generated resource/placement option is translated;
 unsupported options fail explicitly. Queue waits use HTTP locally without a held
-SSH session. The 50-task account cap, configured per-job window, and other jobs
-all constrain dispatch. Batch plans are reused across waves.
+SSH session. The selected account’s reported/observed cap, configured per-job
+window, and other jobs in that account constrain dispatch. The default account
+retains its 50-task fallback; custom accounts do not inherit it. Accounting-policy
+queries still run through SSH (cached for five minutes), rather than inventing a
+REST limit. Batch plans are reused across waves.
 
 The previous compute-node controller and detached launchers are retained under
 [`archived/`](archived/README.md) for reference, with regression coverage, but
@@ -484,7 +487,8 @@ The submitted-task window defaults to 50. The unified batch suggestion is the
 larger of the conservative half-capacity size and the smallest size that fits all
 allocation groups into the currently available submission window.
 The capacity estimate is `max(1, floor(hardware parallelism / 2))`, then capped
-by the workflow submission window and 50; the starting size is the pair count
+by the workflow submission window and any reported account submission limit
+(50 for the default account); the starting size is the pair count
 divided by that assumed parallelism, rounded up. The factor of two allows for
 other cluster users rather than aiming for two waves.
 If no size can fit, the explanation and submission warning say that later batches
@@ -500,3 +504,24 @@ succeeds. Independent API reads no longer serialize behind one global cache lock
 The v0.0.40 distribution field cannot be parsed by datalab's server; single-task,
 single-node submissions omit that redundant field rather than send an ignored
 placement setting. Source builds translate SLURM duration syntax to API minutes.
+
+
+## SLURM Accounts
+
+On Basics, **SLURM account (optional)** selects the account used for worker and
+build jobs. Leave it blank for the cluster default, or enter `cpuopt` if your user
+has that association. The Makefile equivalent is `SLURMY_ACCOUNT := cpuopt`.
+Slurmy passes `--account=cpuopt` to `sbatch` and the corresponding account field to
+REST submissions. The selected account is saved for Resume and portable workflows.
+An invalid or unauthorized account produces a submission error; Slurmy does not
+silently retry under the default account.
+
+Datalab's default account reports a 50-task submission limit. On 19 November 2026,
+`cpuopt` reported no account-specific MaxSubmitJobs limit for the configured user.
+Slurmy scopes queue counts, fair sharing, cached policy and observed submission
+limits to the selected account. Other SLURM/QOS policies still apply. If no limit
+is reported for a custom account, Slurmy uses the workflow submission window
+without imposing a fictitious 50-task account cap. The window still defaults to
+50: increase **Maximum submitted SLURM tasks for this job** to submit more batches
+at once. Suggestions and the submission warning use the same account-specific
+policy; cached/unknown policy is an estimate, not permission to bypass SLURM.

@@ -557,7 +557,8 @@ def generate(jobpairs: Path, building: Path, limiter_file: Path,
                        + f'--build-policy {build.build_policy} '
                        + f'--artifact={shlex.quote(build.artifact or ".slurmy-built")} '
                        + '--sbatch-option="--partition=${SLURMY_PARTITION:?Set SLURMY_PARTITION}" '
-                       + '${SLURMY_RESERVATION:+--sbatch-option=--reservation=$SLURMY_RESERVATION}')
+                       + '${SLURMY_RESERVATION:+--sbatch-option=--reservation=$SLURMY_RESERVATION} '
+                       + '${SLURMY_ACCOUNT:+--sbatch-option=--account=$SLURMY_ACCOUNT}')
             commands.append((i, command))
         if parallel_builds and build_total > 1:
             build_lines += [f'echo "Starting {build_total} independent cluster builds in parallel"', 'build_pids=()', 'build_names=()']
