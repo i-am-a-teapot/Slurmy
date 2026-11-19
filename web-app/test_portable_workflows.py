@@ -52,7 +52,7 @@ class PortableWorkflowTests(unittest.TestCase):
             with self.subTest(accounts=available):
                 bundle=self.bundle();self.addCleanup(bundle.close)
                 with patch.object(accounts,'memberships',return_value={'accounts':available}) as lookup:
-                    imported,_=portable.import_bundle(bundle,'account-'+(expected or 'default'),selected_host='current-host')
+                    imported,_=portable.import_bundle(bundle,'account-'+'-'.join(available),selected_host='current-host')
                 lookup.assert_called_once_with('current-host')
                 self.assertEqual(workflows.decisions(imported)['account'],expected)
                 self.assertIn('SLURMY_ACCOUNT := '+expected,(imported/'Makefile').read_text())
