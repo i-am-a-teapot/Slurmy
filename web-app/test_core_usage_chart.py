@@ -12,6 +12,8 @@ const context = {document: {body: {dataset: {}}, querySelector: () => null}};
 vm.createContext(context);
 vm.runInContext(fs.readFileSync(process.argv[1], 'utf8'), context);
 const chart = context.clusterCoreUsage;
+assert.equal(context.clusterPlacementDescription({node_placement:{'os-cpu-slurm-13':{socket_ids:[0,1],core_ids:[30,31,52,53,54,55,56,57,58,59]}}}),
+  'CPU 0-1 · Assigned cores 30-31, 52-59');
 assert.equal(context.clusterAllocationDescription({solver_cores:12, reserved_cores:32, solver_isolation:'socket'}),
   'solver limited to 12 physical cores · 32 physical cores allocated · whole CPU sockets dedicated');
 assert.equal(context.clusterAllocationDescription({solver_cores:12, reserved_cores:64, solver_isolation:'node'}),

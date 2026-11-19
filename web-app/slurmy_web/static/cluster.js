@@ -44,13 +44,13 @@ function clusterPlacementDescription(job, node = null) {
     for (let i = 0; i < ids.length; i++) {
       const first = ids[i];
       while (i + 1 < ids.length && ids[i + 1] === ids[i] + 1) i++;
-      parts.push(first === ids[i] ? `${first}` : `${first}–${ids[i]}`);
+      parts.push(first === ids[i] ? `${first}` : `${first}-${ids[i]}`);
     }
     return parts.join(', ');
   };
   return placements.map(([name, placement]) => {
-    const sockets = placement.socket_ids?.length ? `CPU socket ${ranges(placement.socket_ids)}` : 'CPU socket unavailable';
-    return `${node ? '' : name + ': '}${sockets} · allocated core IDs ${ranges(placement.core_ids)}`;
+    const sockets = placement.socket_ids?.length ? `CPU ${ranges(placement.socket_ids)}` : 'CPU unavailable';
+    return `${sockets} · Assigned cores ${ranges(placement.core_ids)}`;
   }).join('; ');
 }
 
