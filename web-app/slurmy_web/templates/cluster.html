@@ -6,7 +6,6 @@
 {% block content %}
 <div class="cluster-status-row"><p id="cluster-connection" class="muted" role="status">Connecting to {{ host }}…</p><div class="cluster-controls"><label>Partition <select id="cluster-partition"><option value="CPU-amd">CPU-amd</option><option value="all">All partitions</option></select></label><button id="cluster-refresh" class="secondary" type="button">↻ Refresh</button></div></div>
 <div class="stats" aria-label="Cluster summary"><article><span>Nodes Free</span><strong id="cluster-free">—</strong></article><article><span>Physical Cores Allocated</span><strong id="cluster-utilization">—</strong></article><article><span>Running Tasks</span><strong id="cluster-running">—</strong></article><article><span>Pending Tasks</span><strong id="cluster-pending">—</strong></article></div>
-<p class="muted cluster-explainer">This percentage is the share of physical cores allocated by SLURM, not measured processor activity. “Free” means nodes in SLURM's idle state; mixed nodes can still have available cores.</p>
 <details class="panel cluster-panel cluster-core-panel" aria-labelledby="cluster-core-chart-title" open>
 <summary><span id="cluster-core-chart-title">Allocated Cores by User · CPU-amd</span><label class="cluster-core-mode">Percentages relative to<select id="cluster-core-mode"><option value="allocated">Allocated cores</option><option value="total">Total cores</option></select></label></summary>
 <div class="cluster-panel-body">
