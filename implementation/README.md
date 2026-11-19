@@ -440,6 +440,9 @@ Like StarExec, new runsolver workers capture stdout and stderr together through
 runsolver's live timestamping pipe. StarExec downloads copy that combined stream
 verbatim, including its native EOF; stderr is not appended a second time. Separate
 raw stdout/stderr copies remain available in the interface and standard downloads.
+The output inspector defaults to **Runsolver output (stdout + stderr)** when that
+recording exists; **Solver stdout (raw)** and **Solver stderr** remain separate
+choices. This exposes the native per-line timestamps for existing saved runs too.
 Those copies retain the solver's own formatting rather than runsolver timestamps;
 the independently collected computer-information header is prepended as before.
 Two small `tee` processes drain the streams during execution and are awaited before

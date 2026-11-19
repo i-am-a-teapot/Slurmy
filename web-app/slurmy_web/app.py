@@ -913,6 +913,13 @@ def create_app():
             'variables': ('${VAR_FILE}', '--var'),
         }
         for kind, stream in payload['streams'].items():
+            if kind == 'solver_combined':
+                stream['explanation'] = ('Native runsolver output, including stdout and stderr; --timestamp supplies the per-line timestamps.'
+                                         if stream['exists'] else 'No native combined output was saved for this pair; choose Solver stdout (raw) or Solver stderr.')
+                continue
+            if kind == 'solver' and stream['exists']:
+                stream['explanation'] = 'Separate raw stdout copy. For native runsolver timestamps, choose Runsolver output (stdout + stderr).'
+                continue
             if stream['exists']:
                 stream['explanation'] = ('Saved, but empty. This can be normal if nothing was written.'
                                          if not stream['size'] else 'Saved output.')

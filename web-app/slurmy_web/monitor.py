@@ -568,6 +568,7 @@ emit_member() {
 }
 
 emit_member solver solver.log
+emit_member solver_combined solver-combined.log
 emit_member solver_stderr solver-stderr.log
 emit_member limiter_stdout limiter-stdout.log
 emit_member controller controller.log
@@ -1267,7 +1268,8 @@ def parse_task_output(job_id: str, task_id: int, archive: str, data: bytes) -> T
     parts = data.split(b"\0")
     streams: dict[str, OutputStream] = {}
     labels = {
-        "solver": "Solver stdout",
+        "solver": "Solver stdout (raw)",
+        "solver_combined": "Runsolver output (stdout + stderr)",
         "solver_stderr": "Solver stderr",
         "limiter_stdout": "Limiter stdout",
         "controller": "Slurmy controller diagnostics",

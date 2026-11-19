@@ -387,7 +387,7 @@ function refreshLabel(data){
 async function fetchJobs(){const directory=document.body.dataset.directory;const data=await api('/api/jobs?'+params(directory?{directory}:{}));jobs=data.jobs;for(const job of jobs)job.snapshot_stale=Boolean(data.refresh?.stale);renderJobs();const recovering=jobs.reduce((latest,job)=>job.recovery_operation&&(!latest||job.recovery_started>latest.recovery_started)?job:latest,null);if(recovering)watchRecovery(recovering);text('#connection',refreshLabel(data));}
 async function openOutput(task){
  const panel=$('#call-output');panel.hidden=false;$('#stream').closest('label').hidden=false;text('#output-title',`Solver-Problem Pair ${task.id} · ${task.solver}`);highlightShell($('#command'),`Solver command: ${task.command}\nLimiter command: ${task.limiter_command||'Unavailable for this older job'}\nWorking directory: ${task.directory}`);$('#command').hidden=false;text('#output-info',task.problem);text('#output-text','Loading saved output…');selectedOutput=null;panel.scrollIntoView({behavior:'smooth',block:'start'});
- try{const data=await api(`/api/jobs/${encodeURIComponent(document.body.dataset.job)}/output/${task.id}?`+params({}));selectedOutput=data;renderOutput();}catch(error){text('#output-text',error.message);}
+ try{const data=await api(`/api/jobs/${encodeURIComponent(document.body.dataset.job)}/output/${task.id}?`+params({}));selectedOutput=data;if($('#stream').value==='solver_combined'&&!data.streams.solver_combined?.exists)$('#stream').value='solver';renderOutput();}catch(error){text('#output-text',error.message);}
 }
 async function openDiagnostic(task){
  const panel=$('#call-output');panel.hidden=false;$('#stream').closest('label').hidden=true;
