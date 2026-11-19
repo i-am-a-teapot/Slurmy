@@ -268,6 +268,7 @@ function clusterTasksForUser(data) {
     find('#cluster-core-chart-status').textContent = `Loading allocations for ${scope}…`;
   }
   function render() {
+    window.SlurmySelects?.refresh();
     if (!status) return;
     const totals = status.summary;
     find('#cluster-node-user-scope').textContent = `“Running my tasks” includes every running SLURM task owned by ${status.user} in the selected partition, including tasks submitted outside Slurmy.`;
@@ -402,7 +403,7 @@ function clusterTasksForUser(data) {
       partitionSelect.replaceChildren(new Option('All partitions', 'all'), ...data.partitions.map(name => new Option(name, name)));
       if (![...partitionSelect.options].some(option => option.value === prior)) partitionSelect.add(new Option(prior, prior));
       partitionSelect.value = prior;
-      updateJobChoices();
+          updateJobChoices();
       render();
       message.textContent = `Connected to ${host} · ${selected} · refreshed ${new Date(data.updated * 1000).toLocaleTimeString()} · refreshes every 30 seconds`;
     } catch (error) {
@@ -436,6 +437,7 @@ function clusterTasksForUser(data) {
   for (const selector of ['#cluster-node-filter', '#cluster-user-filter', '#cluster-job-filter']) {
     find(selector).addEventListener('input', render);
   }
+  window.SlurmySelects?.refresh();
   resetCoreUsage();
   refresh();
   setInterval(() => refresh(true), 30000);

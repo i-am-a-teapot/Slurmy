@@ -624,3 +624,11 @@ details[data-section-state="closing"] > summary::before { transform: rotate(0deg
 .cluster-core-panel .cluster-core-mode { font-size: 12px; font-weight: 400; }
 .cluster-core-panel .cluster-core-mode select { height: 34px; min-height: 34px; padding-block: 5px; }
 .cluster-core-panel > .cluster-panel-body > p { margin: 0 0 14px; }
+.themed-select { display: inline-block; min-width: 0; }
+.themed-select-toggle { display: flex; align-items: center; justify-content: space-between; gap: 18px; width: 100%; height: var(--control-height); text-align: left; }
+.themed-select-menu { position: fixed; inset: auto; margin: 0; min-width: 0; padding: 5px; overflow-y: auto; }
+.themed-select-menu button { display: block; width: 100%; height: auto; min-height: 36px; padding: 8px 12px; text-align: left; }
+.themed-select-menu button[aria-selected="true"] { font-weight: 700; }
+.themed-select-menu button[aria-selected="true"]::after { content: '✓'; float: right; margin-left: 12px; }
+.themed-select-menu button:focus-visible { outline-offset: -2px; }
+.cluster-core-panel .themed-select-toggle { height: 34px; min-height: 34px; padding-block: 5px; }

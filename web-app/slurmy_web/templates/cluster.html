@@ -1,7 +1,7 @@
 {% extends 'base.html' %}
 {% block page_heading %}<p class="eyebrow">SLURM / LIVE QUEUE</p><h1>Cluster Status</h1>{% endblock %}
 {% block title %}Cluster Status{% endblock %}
-{% block scripts %}<script src="{{ url_for('static', filename='cluster.js') }}" defer></script>{% endblock %}
+{% block scripts %}<script src="{{ url_for('static', filename='select-menu.js') }}" defer></script><script src="{{ url_for('static', filename='cluster.js') }}" defer></script>{% endblock %}
 {% block data %}data-page="cluster"{% endblock %}
 {% block content %}
 <div class="heading"><div><p class="muted">Nodes and active SLURM tasks across all users in the selected partition.</p></div><div class="cluster-controls"><label>Partition <select id="cluster-partition"><option value="CPU-amd">CPU-amd</option><option value="all">All partitions</option></select></label><button id="cluster-refresh" class="secondary" type="button">↻ Refresh</button></div></div>
