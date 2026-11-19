@@ -1,7 +1,7 @@
 'use strict';
 if(document.body.dataset.page==='job'&&document.querySelector('#job-batches')){
  const panel=$('#job-batches'),list=$('#batch-list'),pagination=$('#batch-pagination');
- const jobId=document.body.dataset.job,expanded=new Map();let batchPage=0,listRequest=0,retryTimer=null;
+ const jobId=document.body.dataset.job,expanded=new Map();let batchPage=0,listRequest=0,retryTimer=null,focusBatch=null;
  const url=suffix=>`/api/jobs/${encodeURIComponent(jobId)}/batches${suffix}`;
  function freshness(data){const info=data.refresh||{},when=info.updated?new Date(info.updated*1000).toLocaleTimeString():'unknown time';return info.stale?`Saved snapshot from ${when} · may be out of date${info.refreshing?' · refreshing in background':''}`:`Last refreshed ${when}`;}
  function pager(container,current,total,size,change,label){
@@ -37,12 +37,13 @@ if(document.body.dataset.page==='job'&&document.querySelector('#job-batches')){
   if(!panel.open)return;const request=++listRequest;
   if(!list.childNodes.length)list.append(el('p','Loading batches…','muted'));
   try{
-   const data=await api(url('?')+params({page:batchPage,per_page:25}));if(request!==listRequest||!panel.open)return;
+   const data=await api(url('?')+params({page:batchPage,per_page:25,...(focusBatch!==null?{batch:focusBatch}:{})}));if(request!==listRequest||!panel.open)return;
+   if(data.page!==undefined)batchPage=data.page;
    const last=Math.max(0,Math.ceil(data.total/25)-1);if(batchPage>last){batchPage=last;loadList();return;}
    text('#batch-freshness',`${data.total} batch${data.total===1?'':'es'} · ${freshness(data)}`);$('#batch-warning').hidden=!data.membership_estimated;
    const children=[];
    for(const batch of data.batches){
-    const details=el('details',undefined,'batch-inspector'),summary=el('summary'),content=el('div');
+    const details=el('details',undefined,'batch-inspector'),summary=el('summary'),content=el('div');details.id=`job-batch-${batch.id}`;
     const title=el('span',`Batch ${batch.id}`),progress=el('span',`${batch.finished} / ${batch.total} finished${batch.state==='Finished'?'':' · '+batch.state}`,'muted');summary.append(title,progress);
     const timings=el('span',undefined,'batch-timings');
     const formatTime=value=>value?value.replace('T',' '):'Not recorded';
@@ -56,11 +57,19 @@ if(document.body.dataset.page==='job'&&document.querySelector('#job-batches')){
    }
    if(!children.length)children.push(el('p',data.refresh?.refreshing?'The batch plan is loading. It will appear when the job refresh completes.':'No batch plan is available for this job.','muted'));
    list.replaceChildren(...children);pager(pagination,batchPage,data.total,25,page=>{expanded.clear();batchPage=page;loadList();},'Go to batches page');
+   if(focusBatch!==null){document.getElementById(`job-batch-${focusBatch}`)?.scrollIntoView({behavior:'smooth',block:'start'});focusBatch=null;}
    if(data.refresh?.refreshing)retryTimer=setTimeout(loadList,1000);
   }catch(error){if(request!==listRequest)return;text('#batch-freshness',`Could not update batches: ${error.message}`);if(!list.querySelector('details'))list.replaceChildren(button('Retry',loadList));}
  }
  panel.addEventListener('toggle',()=>{if(panel.open)loadList();else{++listRequest;clearTimeout(retryTimer);retryTimer=null;}});
- function openLinkedBatches(){if(location.hash!=='#job-batches')return;panel.open=true;panel.scrollIntoView({behavior:'smooth',block:'start'});}
+ function openLinkedBatches(){
+  if(location.hash!=='#job-batches')return;
+  const requested=new URLSearchParams(location.search).get('batch');
+  if(requested!==null&&/^\d+$/.test(requested)){focusBatch=Number(requested);expanded.set(focusBatch,0);}
+  const alreadyOpen=panel.open;panel.open=true;
+  if(alreadyOpen)loadList();
+  panel.scrollIntoView({behavior:'smooth',block:'start'});
+ }
  window.addEventListener('hashchange',openLinkedBatches);
  openLinkedBatches();
  window.SlurmyBatches={refresh:loadList};

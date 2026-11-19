@@ -870,11 +870,18 @@ def create_app():
 
     @app.get('/api/jobs/<job_id>/batches')
     def job_batches(job_id):
-        from .batches import batch_summaries
+        from .batches import batch_summaries, batch_members
         job = job_snapshot(job_id)
         page_number, per_page, _, _ = call_page_args()
-        return jsonify(**batch_summaries(job, batch_allocations(job), page_number, min(per_page, 100)),
-                       refresh=g.snapshot_refresh)
+        per_page = min(per_page, 100)
+        if request.args.get('batch') is not None:
+            target = request.args.get('batch', type=int)
+            ids = sorted(batch_members(job)[0])
+            if target not in ids:
+                abort(404, 'Batch not found in this job.')
+            page_number = ids.index(target) // per_page
+        return jsonify(**batch_summaries(job, batch_allocations(job), page_number, per_page),
+                       page=page_number, refresh=g.snapshot_refresh)
 
     @app.get('/api/jobs/<job_id>/batches/<int:batch_id>')
     def job_batch(job_id, batch_id):

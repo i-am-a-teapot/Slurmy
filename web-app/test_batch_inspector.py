@@ -86,6 +86,15 @@ class BatchInspectorTests(unittest.TestCase):
         groups,estimated=batch_members(job)
         self.assertEqual(groups,{0:[0,1,2,3],1:[4,5,6,7]});self.assertTrue(estimated)
 
+    def test_linked_batch_selects_correct_page_even_for_sparse_batch_ids(self):
+        job=self.job();job.metadata.pop('planned_batch_tasks');job.task_batches={0:4,1:168,2:168}
+        client=self.client(job)
+        response=client.get('/api/jobs/example/batches?batch=168&per_page=1')
+        self.assertEqual(response.status_code,200,response.json)
+        self.assertEqual(response.json['batches'][0]['id'],168)
+        self.assertGreater(response.json['page'],0)
+        self.assertEqual(client.get('/api/jobs/example/batches?batch=9999').status_code,404)
+
     def test_unknown_batch_and_invalid_page_are_rejected(self):
         client=self.client(self.job())
         self.assertEqual(client.get('/api/jobs/example/batches/99').status_code,404)

@@ -199,23 +199,21 @@ function clusterTasksForUser(data) {
   function match(values, filter) {
     return values.some(value => String(value ?? '').toLowerCase().includes(filter));
   }
+  function taskBatchId(job) { return job.batch_index ?? job.active_call?.batch_id; }
+  function taskBatchLink(job) {
+    const id = taskBatchId(job), accessible = job.slurmy_id && job.user === status.user;
+    const item = document.createElement(accessible && id != null ? 'a' : 'span');
+    item.className = 'cluster-job-batch-count';
+    item.textContent = id != null ? `Batch #${id}` : job.controller ? 'Submission controller' : 'Batch unavailable';
+    if (accessible && id != null) {
+      item.href = `/jobs/${encodeURIComponent(job.slurmy_id)}?${new URLSearchParams({host,batch:id})}#job-batches`;
+      item.title = 'Inspect the solver-problem pairs in this SLURM task’s batch';
+    } else if (id != null) item.title = 'Batch details require an SSH connection as the user who owns this job';
+    return item;
+  }
   function slurmyCell(job) {
     const result = cell('');
-    result.title = job.metadata_source || '';
-    if (job.jobpairs == null) result.textContent = job.slurmy ? 'Metadata unavailable' : '—';
-    else {
-      result.replaceChildren();
-      const pairs = document.createElement('div');pairs.className = 'cluster-job-pair-count';
-      pairs.textContent = `${job.jobpairs.toLocaleString()} solver-problem pairs`;
-      const accessible = job.slurmy_id && job.user === status.user;
-      const batches = document.createElement(accessible ? 'a' : 'span');
-      batches.className = 'cluster-job-batch-count';batches.textContent = `${job.batches.toLocaleString()} batches`;
-      if (accessible) {
-        batches.href = `/jobs/${encodeURIComponent(job.slurmy_id)}?${new URLSearchParams({host})}#job-batches`;
-        batches.title = 'Inspect the exact solver-problem pairs in each batch for this job';
-      } else if (job.slurmy_id) batches.title = 'Batch details require an SSH connection as the user who owns this job';
-      result.append(pairs, batches);
-    }
+    if (job.slurmy) { result.replaceChildren(taskBatchLink(job)); }
     if(job.active_call){const current=document.createElement('a');current.className='cluster-active-call';current.href=`/jobs/${encodeURIComponent(job.slurmy_id)}?${new URLSearchParams({host,call:job.active_call.id})}`;current.textContent=`${job.active_call.solver} — ${job.active_call.problem.split('/').pop()}`;current.title=job.active_call.problem;result.append(current);}
     return result;
   }
@@ -329,11 +327,12 @@ function clusterTasksForUser(data) {
           detail.href = `/jobs/${encodeURIComponent(job.slurmy_id)}?${new URLSearchParams({host, call: job.active_call.id})}`;
           detail.textContent = `${job.active_call.solver} — ${job.active_call.problem.split('/').pop()}`;
           const identifiers = document.createElement('div');identifiers.className = 'cluster-pair-identifiers';
-          identifiers.textContent = `Solver-problem pair ${job.active_call.id}${job.active_call.batch_id!=null?' · Batch '+job.active_call.batch_id:''}`;
+          identifiers.append(document.createTextNode(`Solver-problem pair ${job.active_call.id}`));
+          if (taskBatchId(job) != null) identifiers.append(document.createTextNode(' · '), taskBatchLink(job));
           detail.title = job.active_call.problem;
           call.append(detail, identifiers);
           item.append(call);
-        }
+        } else if (job.slurmy) item.append(taskBatchLink(job));
         list.append(item);
       }
       if (!onNode.length) list.textContent = 'No running tasks on this node.';
