@@ -632,3 +632,7 @@ details[data-section-state="closing"] > summary::before { transform: rotate(0deg
 .themed-select-menu button[aria-selected="true"]::after { content: '✓'; float: right; margin-left: 12px; }
 .themed-select-menu button:focus-visible { outline-offset: -2px; }
 .cluster-core-panel .themed-select-toggle { height: 34px; min-height: 34px; padding-block: 5px; }
+.cluster-status-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px 20px; margin-bottom: 24px; }
+.cluster-status-row > #cluster-connection { flex: 1 1 340px; margin: 0; }
+.cluster-status-row .cluster-controls { align-items: center; }
+.cluster-status-row .cluster-controls label { flex-direction: row; align-items: center; gap: 10px; min-width: 0; }
