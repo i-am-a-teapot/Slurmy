@@ -60,7 +60,7 @@ class WorkflowAuditTests(unittest.TestCase):
         (self.directory/'building.txt').write_text(json.dumps(definitions))
         data = workflows.decisions(self.directory)
         data.update(building_mode='existing', building_file=str(self.directory/'building.txt'), resources=[])
-        (self.directory/'.slurmy-workflow.json').write_text(json.dumps(data))
+        (self.directory/'workflow.json').write_text(json.dumps(data))
         destination = workflows.duplicate(self.directory, 'copy')
         build, = read_builds(destination/'building.txt')
         self.assertEqual(build.recipe, destination/'build.sh')

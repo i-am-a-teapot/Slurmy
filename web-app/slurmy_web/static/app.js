@@ -353,11 +353,13 @@ function renderJobs(){
  const body=$('#jobs-body');body.replaceChildren();
  for(const job of filtered.slice(jobsPage*perPage,(jobsPage+1)*perPage)){
   const title=job.provisional?el('div',job.name,'job-link'):link(job.name,'/jobs/'+encodeURIComponent(job.id)+'?'+params({}));title.className='job-link';
+  const jobTitle=el('div',undefined,'job-history-title');jobTitle.append(title);
+  if(job.workflow_name){const origin=job.directory?link(job.workflow_name,'/workflow?'+params({directory:job.directory})):el('span',job.workflow_name);origin.className='job-history-workflow';jobTitle.append(origin);}
   const progress=jobStatusBar(job);
   if(job.phase)progress.append(el('small',job.phase,'submission-phase'));
   else if(job.attention)progress.append(el('small',job.attention,'submission-phase'));
   else if(job.submission_state==='submitting')progress.append(el('small',`Submitting batches: ${job.submitted_batches} / ${job.batch_count} accepted`,'submission-phase'));
-  const cells=[title,progress,new Date(job.created*1000).toLocaleString()];
+  const cells=[jobTitle,progress,new Date(job.created*1000).toLocaleString()];
   const actions=el('div',undefined,'job-row-actions');
   if(job.provisional)actions.append('Awaiting submission');
   else{actions.append(button('Rename',()=>renameJob(job.id,job.name)));if(page==='jobs')actions.append(button('Delete',event=>deleteJob(job.id,event.currentTarget),'danger'));}

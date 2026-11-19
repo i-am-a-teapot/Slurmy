@@ -55,9 +55,9 @@ def fetch_status(host, partition, node=None):
         queue.append('|'.join(str(value).replace('|', ' ').replace('\n', ' ') for value in row))
     sections += ['JOBS', *queue, 'IDENTITY', slurm_api.credentials(host)['user'], 'HOSTS']
     sections += [expression+'|'+names for expression,names in hostlists.items()]
-    if node and any(j.get('user_name') == slurm_api.credentials(host)['user'] and '/slurmy/jobs/' in j.get('current_working_directory', '') for j in jobs):
+    if any(j.get('user_name') == slurm_api.credentials(host)['user'] and '/slurmy/jobs/' in j.get('current_working_directory', '') and any(state in {'RUNNING','COMPLETING'} for state in j.get('job_state',[])) for j in jobs):
         # The REST API cannot expose private solver progress files. Read these
-        # only when expanding a node; no scheduler commands are run over SSH.
+        # in one grouped query for own running jobs; no scheduler commands run over SSH.
         script = 'set -euo pipefail\njobs='+shlex.quote('\n'.join(queue))+'\n'+REMOTE_STATUS_SCRIPT.split("printf 'CALLS\\n'",1)[1]
         result = subprocess.run(['ssh', *connection_options(), '-T', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=10',
                                  '--', host, 'bash', '-s'], input=script, text=True, capture_output=True, timeout=20)

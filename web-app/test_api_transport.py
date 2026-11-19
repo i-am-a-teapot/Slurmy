@@ -1,3 +1,4 @@
+from types import SimpleNamespace
 """REST cluster projection and per-host connection settings in the interface."""
 import json
 from pathlib import Path
@@ -20,7 +21,7 @@ class TransportTests(unittest.TestCase):
              comment='slurmy:v1:calls=10:batches=1:cores=2:isolation=socket:batch=0',
              job_resources=dict(allocated_nodes=[dict(nodename='n1',sockets={'1':{'cores':{str(i):'allocated' for i in range(4)}}})]))]
         def read(host,endpoint):return {'nodes':nodes,'partitions':[dict(name='CPU-amd'),dict(name='GPU')]} if endpoint!='jobs' else {'jobs':jobs}
-        with patch.object(slurm_api,'read',side_effect=read),patch.object(slurm_api,'active_jobs',return_value=jobs),patch.object(slurm_api,'credentials',return_value=dict(user='alice')):
+        with patch.object(slurm_api,'read',side_effect=read),patch.object(slurm_api,'active_jobs',return_value=jobs),patch.object(slurm_api,'credentials',return_value=dict(user='alice')),patch.object(cluster_api.subprocess,'run',return_value=SimpleNamespace(returncode=0,stdout='METADATA\n')):
             value=cluster_api.fetch_status('host','CPU-amd')
         self.assertEqual(value['summary']['total_cores'],8)
         self.assertEqual(value['users'][0]['allocated_cores'],4)

@@ -12,6 +12,44 @@ from slurmy_web.app import create_app
 
 
 class WorkflowFileTests(unittest.TestCase):
+    def test_json_definition_and_generated_configuration_edits_update_each_other(self):
+        definition=json.loads((self.directory/'workflow.json').read_text())
+        self.assertNotIn('host',definition)
+        self.assertNotIn('SLURMY_HOST',(self.directory/'Makefile').read_text())
+        definition['configurations'][0]['cpu_limit']='7'
+        workflow_files.replace(self.directory,'workflow.json',json.dumps(definition))
+        self.assertEqual(self.rows('configurations.csv')[0]['cpu_limit'],'7')
+        self.assertEqual(self.rows('jobpairs.csv')[0]['cpu_limit'],'7')
+        rows=self.rows('configurations.csv');rows[0]['cpu_limit']='8'
+        workflow_files.replace(self.directory,'configurations.csv',workflows.csv_text(rows,tuple(rows[0])))
+        self.assertEqual(json.loads((self.directory/'workflow.json').read_text())['configurations'][0]['cpu_limit'],'8')
+
+    def test_legacy_hidden_json_is_read_and_new_saves_publish_visible_json(self):
+        path=self.directory/'workflow.json';legacy=self.directory/'.slurmy-workflow.json'
+        path.rename(legacy)
+        decisions=workflows.decisions(self.directory)
+        workflows.save(decisions,self.directory)
+        self.assertTrue(path.is_file())
+        self.assertEqual(workflows.decisions(self.directory)['name'],self.directory.name)
+
+    def test_build_script_arguments_are_preserved_in_generated_builds(self):
+        import shlex
+        from slurmy import read_builds,generate
+        script=self.runtime/'build python.py';script.write_text('#!/usr/bin/env python3\nprint("build")\n')
+        data=workflows.decisions(self.directory)
+        data['resources'][0].update(mode='script',script=shlex.join([str(script),'--target','name with spaces']),artifact='solver')
+        workflows.save(data,self.directory)
+        resource,=read_builds(self.directory/'building.txt')
+        self.assertEqual(resource.arguments,('--target','name with spaces'))
+        generate(self.directory/'jobpairs.csv',self.directory/'building.txt',self.directory/'resource_limiter_template.txt')
+        command=(self.directory/'submit.sh.files/builds/run.sh').read_text()
+        self.assertIn('--recipe-arg=--target',command)
+        self.assertIn("--recipe-arg='name with spaces'",command)
+        duplicate=workflows.duplicate(self.directory,'duplicate')
+        copied,=read_builds(duplicate/'building.txt')
+        self.assertEqual(copied.recipe,script)
+        self.assertEqual(copied.arguments,resource.arguments)
+
     def setUp(self):
         temporary=tempfile.TemporaryDirectory();self.addCleanup(temporary.cleanup)
         self.root=Path(temporary.name);self.users=self.root/'users';self.users.mkdir()

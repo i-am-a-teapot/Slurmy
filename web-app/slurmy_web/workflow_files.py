@@ -11,7 +11,7 @@ from pathlib import Path
 from slurmy import read_builds
 from . import workflows
 
-FILES = ('jobpairs.csv', 'configurations.csv', 'problem-globs.txt', 'axiom-globs.txt',
+FILES = ('workflow.json', 'jobpairs.csv', 'configurations.csv', 'problem-globs.txt', 'axiom-globs.txt',
          'building.txt', 'resource_limiter_template.txt', 'Makefile')
 SETTINGS = {'GET_COMPUTER_INFO': 'get_computer_info', 'BATCH_SIZE': 'batch_size', 'PAIR_ORDER': 'pair_order',
             'SLURMY_MAX_OUTSTANDING': 'max_outstanding', 'SLURMY_HOST': 'host',
@@ -69,7 +69,13 @@ def replace(directory, name, content, progress=None):
                                      prefix='.replace-', suffix=Path(name).suffix) as upload:
         upload.write(content); upload.flush()
         temporary = Path(upload.name)
-        if name == 'jobpairs.csv':
+        if name == 'workflow.json':
+            replacement=json.loads(content)
+            if not isinstance(replacement,dict): raise ValueError('Workflow definition must be a JSON object.')
+            if replacement.get('name',directory.name)!=directory.name: raise ValueError('Use the workflow rename control to change its name.')
+            replacement.update(name=directory.name,host=data.get('host','datalab'))
+            data=replacement
+        elif name == 'jobpairs.csv':
             data.update(mode='jobpairs', jobpairs=str(temporary), configurations=[], configurations_file='', globs=[])
         elif name == 'configurations.csv':
             data.update(mode='interactive', configurations=workflows.imported_rows(temporary, True), configurations_file='')
@@ -84,7 +90,7 @@ def replace(directory, name, content, progress=None):
             builds = read_builds(temporary)
             data.update(building_mode='create', building_file='', resources=[dict(
                 root=str(build.root), source=str(build.source) if build.source else '',
-                mode='script' if build.recipe else 'none', script=str(build.recipe) if build.recipe else '',
+                mode='script' if build.recipe else 'none', script=shlex.join([str(build.recipe),*build.arguments]) if build.recipe else '',
                 artifact=build.artifact or '', build_policy=build.build_policy) for build in builds])
             data = workflows.resource_roles(data)
         elif name == 'resource_limiter_template.txt':
@@ -103,7 +109,7 @@ def replace(directory, name, content, progress=None):
             raise ValueError('This Makefile contains custom rules that the workflow editor cannot regenerate. Its files were kept unchanged.')
         if name == 'jobpairs.csv':
             data['jobpairs'] = str(directory / 'jobpairs.csv')
-            files['.slurmy-workflow.json'] = json.dumps(data, indent=2, sort_keys=True) + '\n'
+            files['workflow.json'] = json.dumps({key:value for key,value in data.items() if key!='host'}, indent=2, sort_keys=True) + '\n'
     changed = set(FILES) | set(files) | {'submit.sh'}
     with tempfile.TemporaryDirectory(prefix='.replace-backup-', dir=directory) as folder:
         backup = Path(folder)

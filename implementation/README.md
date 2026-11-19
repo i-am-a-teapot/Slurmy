@@ -525,3 +525,47 @@ without imposing a fictitious 50-task account cap. The window still defaults to
 50: increase **Maximum submitted SLURM tasks for this job** to submit more batches
 at once. Suggestions and the submission warning use the same account-specific
 policy; cached/unknown policy is an estimate, not permission to bypass SLURM.
+
+
+## Text Workflow Definitions and Build Scripts
+
+`workflow.json` is the visible text definition in a saved workflow. It contains
+solver configurations, problem/axiom sources, build settings, limits and SLURM
+settings, but no SSH host. The app always uses the host selected in its header.
+Older hidden `.slurmy-workflow.json` definitions remain readable. The JSON file
+appears alongside the other workflow files: edits/replacements through that UI
+regenerate derived CSV, Makefile and build files atomically. Editing those files
+through their controls updates the JSON too. Use the rename control to rename
+an existing workflow; invalid JSON leaves the saved workflow unchanged.
+
+For a text-only workflow, author or edit `workflow.json` in its workflow directory
+and run `python implementation/slurmy-workflow.py PATH/workflow.json --host datalab`
+to regenerate its files (`--check` validates without replacing them). The host is
+an invocation setting, not part of the definition. Local paths and script paths
+may be absolute; quote script filenames containing spaces before appending
+arguments, for example `"/path/build solver.py" --configuration release`.
+Scripts are staged to the compute node and run with their shebang interpreter;
+scripts without a shebang retain the legacy Bash fallback. Arguments are literal
+shell-quoted words, are preserved in portable workflows, and invalidate build
+reuse when changed. Shell pipelines belong inside a script or the explicit
+inline-command build option.
+
+Batch suggestions also respect a six-hour planning budget. For finite limits,
+the conservative maximum is `floor((21600 - 60) / (largest wall limit + overhead))`,
+where overhead is 80 seconds/pair with computer information or 30 without it.
+This matches the generated startup and per-pair allowances. If the time cap
+requires more batches than the submission window, later batches must wait.
+A zero wall limit is unbounded and cannot provide a six-hour completion guarantee;
+even a single finite pair can exceed the allocation when its own wall limit is
+longer than the batch budget. The explanation and manual-size warning show these
+cases rather than claiming a guaranteed fit.
+
+CPU-amd was verified on 19 November 2026 as 20 nodes, two 32-core sockets/node,
+one thread/core, `CR_CORE_MEMORY`, `task/cgroup,task/affinity`, `OverSubscribe=NO`,
+and `MaxTime=06:00:00`. A 15-core allocation owns those cores while other jobs may
+use remaining cores. A 64-core request consumes all configured CPU capacity on
+one node even without `--exclusive`; explicit whole-node exclusivity additionally
+expresses the placement/isolation policy. Selecting a dedicated node suggests
+all node cores with dedicated sockets off; selecting dedicated sockets suggests
+one socket's cores. Existing saved core choices are kept until the user changes
+placement.

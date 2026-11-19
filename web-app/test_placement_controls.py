@@ -38,15 +38,17 @@ const threadChecks=new WeakMap([[input,thread]]),ensureCoreTopology=()=>{topolog
 const assert=require('assert');let change;let state={topology:{sockets:2,cores_per_socket:32}};
 const core={value:'12',dataset:{coreRequest:'12'},replaceChildren(...options){this.options=options;},setAttribute(){}};
 const socket={value:'false'},node={value:'false'},status={},retry={};
-const fields={'[name="cores"]':core,'[name="exclusive_cpu"]':socket,'.core-validation':status,'[data-core-retry]':retry};
+const fields={'[name="exclusive_node"]':node,'[name="cores"]':core,'[name="exclusive_cpu"]':socket,'.core-validation':status,'[data-core-retry]':retry};
 const card={querySelector:key=>fields[key]};
 const form={addEventListener:(name,fn)=>{if(name==='change')change=fn;}};
 const el=(tag,text)=>({textContent:text,value:text});const ensureCoreTopology=()=>state;
+function setCoreRequest(field,value){field.dataset.coreRequest=String(value);field.value=String(value);}
 function updateSolverStatus(card){syncPlacement(card);}
 '''+controls+r'''
 function event(target){target.closest=()=>card;change({target});}
 syncPlacement(card);assert.equal(core.options.length,64);assert.equal(core.options[63].value,'64');assert.equal(core.value,'12');
-node.name='exclusive_node';node.value='true';event(node);assert.equal(socket.value,'true');assert.equal(core.options.length,32);
+node.name='exclusive_node';node.value='true';event(node);assert.equal(socket.value,'false');assert.equal(core.options.length,64);assert.equal(core.value,'64');
+node.value='false';event(node);socket.name='exclusive_cpu';socket.value='true';event(socket);assert.equal(core.value,'32');
 core.dataset.coreRequest='48';syncPlacement(card);assert.equal(core.value,'');assert.equal(core.dataset.coreValid,'false');assert.equal(core.options.length,33);assert.equal(core.options[0].disabled,true);
 socket.name='exclusive_cpu';socket.value='false';event(socket);assert.equal(core.value,'48');assert.equal(core.dataset.coreValid,'true');
 core.name='cores';core.value='8';event(core);assert.equal(core.dataset.coreRequest,'8');

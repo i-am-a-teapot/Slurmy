@@ -176,6 +176,7 @@ function clusterTasksForUser(data) {
       a.textContent = `${job.jobpairs.toLocaleString()} solver-problem pairs / ${job.batches.toLocaleString()} batches →`;
       result.append(a);
     }
+    if(job.active_call){const current=document.createElement('a');current.className='cluster-active-call';current.href=`/jobs/${encodeURIComponent(job.slurmy_id)}?${new URLSearchParams({host,call:job.active_call.id})}`;current.textContent=`${job.active_call.solver} — ${job.active_call.problem.split('/').pop()}`;current.title=job.active_call.problem;result.append(current);}
     return result;
   }
   function renderCoreUsage(data) {
@@ -281,7 +282,7 @@ function clusterTasksForUser(data) {
           call.className = 'cluster-active-call';
           const detail = document.createElement('a');
           detail.href = `/jobs/${encodeURIComponent(job.slurmy_id)}?${new URLSearchParams({host, call: job.active_call.id})}`;
-          detail.textContent = `${job.active_call.solver} — ${job.active_call.problem.split('/').pop()} · solver-problem pair ${job.active_call.id}`;
+          detail.textContent = `${job.active_call.solver} — ${job.active_call.problem.split('/').pop()} · solver-problem pair ${job.active_call.id}${job.active_call.batch_id!=null?' · batch '+job.active_call.batch_id:''}`;
           detail.title = job.active_call.problem;
           call.append(detail);
           item.append(call);

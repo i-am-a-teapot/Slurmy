@@ -91,6 +91,15 @@ def imported_rows(filename, configurations=False, check_paths=True):
     return rows
 
 
+def build_script(value, base=None):
+    """Parse a script path plus literal shell-quoted arguments."""
+    if not isinstance(value,str) or not value.strip(): raise ValueError('Enter a build script and optional arguments.')
+    if path_at(value,base or BASE).is_file(): return path_at(value,base or BASE), ()
+    words=shlex.split(value)
+    if not words: raise ValueError('Enter a build script.')
+    return existing(words[0],base=base), tuple(words[1:])
+
+
 def specification(data, destination_override=None, progress=None):
     data = dict(data)
     if not isinstance(data.get('get_computer_info', True), bool):
@@ -104,7 +113,10 @@ def specification(data, destination_override=None, progress=None):
     destination = destination_override or USER_RUNS / name
     if destination_override is None and destination.exists():
         raise ValueError(f'Workflow already exists: {destination}')
-    host, partition = alias(data.get('host')), alias(data.get('partition'))
+    from flask import has_request_context, request
+    selected_host=(request.args.get('host') or os.environ.get('SLURMY_HOST','datalab')) if has_request_context() else data.get('host') or os.environ.get('SLURMY_HOST','datalab')
+    host, partition = alias(selected_host), alias(data.get('partition'))
+    data['host']=host
     reservation = alias(data['reservation'].strip()) if data.get('reservation', '').strip() else ''
     data['reservation'] = reservation
     account = alias(data['account'].strip()) if data.get('account', '').strip() else ''
@@ -187,10 +199,11 @@ def specification(data, destination_override=None, progress=None):
             if any(root == previous.root for previous in builds):
                 raise ValueError(f'Duplicate resource root: {root}')
             choice = entry.get('mode')
+            arguments=()
             if choice == 'none':
                 recipe = None
             elif choice == 'script':
-                recipe = existing(entry.get('script'))
+                recipe, arguments = build_script(entry.get('script'))
             elif choice == 'commands':
                 commands = entry.get('commands', '').strip()
                 if not commands:
@@ -226,7 +239,7 @@ def specification(data, destination_override=None, progress=None):
             policy = entry.get("build_policy", "always")
             if policy not in {"always", "changed"}:
                 raise ValueError("Choose a valid build policy.")
-            builds.append(BuildSpec(root, recipe, source or (root if recipe and not artifact else None), artifact or None, policy))
+            builds.append(BuildSpec(root, recipe, source or (root if recipe and not artifact else None), artifact or None, policy, arguments))
     else:
         raise ValueError('Choose how to define resource builds.')
     if data.get('limiter_mode') == 'existing':
@@ -248,11 +261,11 @@ def specification(data, destination_override=None, progress=None):
     if axiom_patterns:
         files['axiom-globs.txt'] = '\n'.join(axiom_patterns) + '\n'
     def building_text(staged=None):
-        if data.get('building_mode') == 'existing' and not any(build.artifact or build.build_policy != 'always' for build in builds):
+        if data.get('building_mode') == 'existing' and not any(build.artifact or build.arguments or build.build_policy != 'always' for build in builds):
             return ''.join(str(build.root) + '\n' + (str(build.recipe) if build.recipe else '') + '\n' for build in builds)
         return json.dumps([{'root': str(build.root), 'source': str(build.source) if build.source else '',
                             'recipe': str(staged / build.recipe.name) if staged and build.recipe and build.recipe.name in recipes and build.recipe.parent == destination else str(build.recipe) if build.recipe else '',
-                            'artifact': build.artifact or '', 'build_policy': build.build_policy, 'legacy': bool(build.recipe and not build.artifact)} for build in builds], indent=2) + '\n'
+                            'artifact': build.artifact or '', 'arguments': list(build.arguments), 'build_policy': build.build_policy, 'legacy': bool(build.recipe and not build.artifact)} for build in builds], indent=2) + '\n'
     files['building.txt'] = building_text()
     # Reuse the core validator/planner. Preview never builds, submits or keeps files.
     with tempfile.TemporaryDirectory(prefix='slurmy-preview-') as folder:
@@ -270,7 +283,6 @@ def specification(data, destination_override=None, progress=None):
         progress('phase', 'Preparing workflow preview', 0, 0)
     files['Makefile'] = (f'REPO_ROOT := ../../..\nBATCH_SIZE := {batch_size}\nSLURMY_MAX_OUTSTANDING := {max_outstanding}\n'
                          + f'PAIR_ORDER := {pair_order}\nGET_COMPUTER_INFO := {str(data["get_computer_info"]).lower()}\n' +
-                         f'SLURMY_HOST := {host}\n'
                          f'SLURMY_PARTITION := {partition}\nSLURMY_RESERVATION := {reservation}\nSLURMY_ACCOUNT := {account}\ninclude $(REPO_ROOT)/implementation/templates/workflow.mk\n')
     if axiom_patterns:
         files['Makefile'] = 'AXIOMS := axiom-globs.txt\n' + files['Makefile']
@@ -281,7 +293,7 @@ def specification(data, destination_override=None, progress=None):
                              'jobpairs.csv: configurations.csv problem-globs.txt refresh-problems\n'
                              '\t"$(SLURMY_PYTHON)" "$(REPO_ROOT)/implementation/slurmy-pairs.py" --configurations configurations.csv '
                              '--problem-globs-file problem-globs.txt --order "$(PAIR_ORDER)" --output $@\n')
-    files['.slurmy-workflow.json'] = json.dumps(data, indent=2, sort_keys=True) + '\n'
+    files['workflow.json'] = json.dumps({key:value for key,value in data.items() if key!='host'}, indent=2, sort_keys=True) + '\n'
     return destination, files, len(rows)
 
 
@@ -363,7 +375,7 @@ def relocate_paths(value, source, destination):
 def rename_and_save(data, source, progress=None):
     """Validate, rename, and update a workflow while retaining its former paths."""
     data = dict(data)
-    manifest = source / '.slurmy-workflow.json'
+    manifest = definition_path(source)
     saved = json.loads(manifest.read_text(encoding='utf-8')) if manifest.is_file() else {}
     data['_created_at'] = saved.get('_created_at', source.stat().st_ctime)
     previous = saved.get('_previous_directories', [])
@@ -384,7 +396,7 @@ def rename_and_save(data, source, progress=None):
     data = relocate_paths(data, source, destination)
     data['_previous_directories'] = [*previous, str(source)]
     files = {filename: relocate_paths(body, source, destination) for filename, body in files.items()}
-    files['.slurmy-workflow.json'] = json.dumps(data, indent=2, sort_keys=True) + '\n'
+    files['workflow.json'] = json.dumps({key:value for key,value in data.items() if key!='host'}, indent=2, sort_keys=True) + '\n'
 
     write_definitions(source, files, destination)
     return destination, count
@@ -423,8 +435,8 @@ def rename_workflow(source,name):
     for path in candidates:
         body=path.read_bytes();changed=rewrite(body)
         if changed!=body:updates[path.relative_to(source)]=(body,changed)
-    manifest=source/'.slurmy-workflow.json'
-    updates[Path('.slurmy-workflow.json')]=(manifest.read_bytes() if manifest.is_file() else None,(json.dumps(data,indent=2,sort_keys=True)+'\n').encode())
+    manifest=source/'workflow.json'
+    updates[Path('workflow.json')]=(manifest.read_bytes() if manifest.is_file() else None,(json.dumps({key:value for key,value in data.items() if key!='host'},indent=2,sort_keys=True)+'\n').encode())
     # Bundles contain the same shell files as calls/, and must move with them.
     import io
     import tarfile
@@ -483,7 +495,7 @@ def migrate_user_runs():
             raise ValueError(f'Cannot migrate {source}: {USER_RUNS / source.name} already exists.')
     mappings = {str(source): str(USER_RUNS / source.name) for source in sources}
     for migrated in USER_RUNS.iterdir():
-        manifest = migrated / '.slurmy-workflow.json'
+        manifest = definition_path(migrated)
         if migrated.is_dir() and manifest.is_file():
             for old in json.loads(manifest.read_text()).get('_previous_directories', []):
                 if Path(old).parent == LEGACY_RUNS:
@@ -501,7 +513,7 @@ def migrate_user_runs():
     old_base = USER_RUNS / 'example-generator'
     plans = []
     for source in sources:
-        manifest = source / '.slurmy-workflow.json'
+        manifest = definition_path(source)
         data = json.loads(manifest.read_text()) if manifest.is_file() else decisions(source, check_paths=False)
         data['name'] = source.name
         data.setdefault('_created_at', source.stat().st_ctime)
@@ -513,9 +525,11 @@ def migrate_user_runs():
         for config in data.get('configurations', []):
             config['solver_directory'] = str(path_at(config['solver_directory'], old_base))
         for resource in data.get('resources', []):
-            for key in ('root', 'script'):
-                if resource.get(key):
-                    resource[key] = str(path_at(resource[key], old_base))
+            if resource.get('root'):
+                resource['root'] = str(path_at(resource['root'], old_base))
+            if resource.get('script'):
+                recipe, arguments = build_script(resource['script'], old_base)
+                resource['script'] = shlex.join([str(recipe), *arguments])
         data['globs'] = [value if value.startswith('tptp://') else str(expand_repo_root(value) or path_at(value, old_base))
                          for value in data.get('globs', [])]
         data['axiom_globs'] = [value if value.startswith('tptp://') else str(expand_repo_root(value) or path_at(value, old_base))
@@ -571,7 +585,7 @@ def migrate_user_runs():
                                    remap((source / 'Makefile').read_text()), count=1)
         for recipe in source.glob('build-resource-*.sh'):
             files[recipe.name] = remap(recipe.read_text())
-        files['.slurmy-workflow.json'] = json.dumps(data, indent=2, sort_keys=True) + '\n'
+        files['workflow.json'] = json.dumps({key:value for key,value in data.items() if key!='host'}, indent=2, sort_keys=True) + '\n'
         plans.append((source, destination, files))
     for source, destination, files in plans:
         source.rename(destination)
@@ -630,9 +644,15 @@ def resource_roles(data):
     return data
 
 
+def definition_path(directory):
+    current=directory/'workflow.json'
+    legacy=directory/'.slurmy-workflow.json'
+    return legacy if not current.is_file() and legacy.is_file() else current
+
+
 def decisions(directory, check_paths=True):
     """Load saved builder decisions, reconstructing older workflows when necessary."""
-    manifest = directory / '.slurmy-workflow.json'
+    manifest = definition_path(directory)
     if manifest.is_file():
         data = json.loads(manifest.read_text(encoding='utf-8'))
         data['name'] = directory.name
@@ -668,7 +688,7 @@ def decisions(directory, check_paths=True):
         configs, globs, mode, jobpairs = [], [], 'jobpairs', str(directory / 'jobpairs.csv')
     builds = read_builds(directory / 'building.txt', check_paths=check_paths)
     resources = [dict(root=str(build.root), mode='script' if build.recipe else 'none',
-                      script=str(build.recipe) if build.recipe else '', commands='',
+                      script=shlex.join([str(build.recipe),*build.arguments]) if build.recipe else '', commands='',
                       source=str(build.source) if build.source else '', artifact=build.artifact or '', build_policy=build.build_policy) for build in builds]
     limiter = (directory / 'resource_limiter_template.txt').read_text(encoding='utf-8').strip()
     lexer = shlex.shlex(limiter, posix=True)
@@ -747,9 +767,11 @@ def copyable_limiter_configuration(directory):
     _, _, entry, root = max(matches, key=lambda item: item[:2])
     resource = {key: str(entry.get(key) or '') for key in ('mode', 'script', 'commands', 'source', 'artifact', 'build_policy')}
     resource['root'] = str(root)
-    for key in ('script', 'source'):
-        if resource[key]:
-            resource[key] = str(expand_repo_root(resource[key]) or path_at(resource[key], BASE))
+    if resource['source']:
+        resource['source'] = str(expand_repo_root(resource['source']) or path_at(resource['source'], BASE))
+    if resource['script']:
+        recipe, arguments = build_script(resource['script'])
+        resource['script'] = shlex.join([str(recipe), *arguments])
     resource['build_policy'] = resource.get('build_policy') or 'always'
     if resource['mode'] in {'script', 'commands'} and not resource['artifact']:
         resource['artifact'] = str(limiter_path.relative_to(root))
@@ -768,7 +790,7 @@ def duplicate(source, name):
     try:
         copied = 0
         for path in source.iterdir():
-            if path.name in {'submit.sh', 'submit.sh.files'} or (path.name.startswith('.') and path.name != '.slurmy-workflow.json'):
+            if path.name in {'submit.sh', 'submit.sh.files'} or (path.name.startswith('.') and path.name != 'workflow.json'):
                 continue
             if path.is_file():
                 shutil.copy2(path, destination / path.name)
@@ -788,7 +810,7 @@ def duplicate(source, name):
             definition = existing(source_data.get('building_file'), base=source)
             data['resources'] = [dict(root=str(build.root), source=str(build.source) if build.source else '',
                                       mode='script' if build.recipe else 'none',
-                                      script=str(build.recipe) if build.recipe else '',
+                                      script=shlex.join([str(build.recipe),*build.arguments]) if build.recipe else '',
                                       artifact=build.artifact or '', build_policy=build.build_policy)
                                  for build in read_builds(definition, check_paths=False)]
             data['resources'] = remap(data['resources'])
@@ -796,17 +818,21 @@ def duplicate(source, name):
         data['name'] = name
         data['_created_at'] = time.time()
         data.pop('_previous_directories', None)
-        (destination / '.slurmy-workflow.json').write_text(
-            json.dumps(data, indent=2, sort_keys=True) + '\n', encoding='utf-8')
+        (destination / 'workflow.json').write_text(
+            json.dumps({key:value for key,value in data.items() if key!='host'}, indent=2, sort_keys=True) + '\n', encoding='utf-8')
         builds=[]
         recipes=[]
         for index,item in enumerate(data['resources']):
+            arguments = ()
             recipe=(item.get('script','') if item['mode']=='script' else
                     str(destination/f'build-resource-{index}.sh') if item['mode']=='commands' else '')
+            if item['mode']=='script' and recipe:
+                recipe, arguments = build_script(recipe, destination)
+                recipe = str(recipe)
             if item['mode']=='commands':
                 (destination/f'build-resource-{index}.sh').write_text(item.get('commands',''),encoding='utf-8')
             if recipe:recipes.append(recipe)
-            builds.append(dict(root=item['root'],source=item.get('source',''),recipe=recipe,
+            builds.append(dict(root=item['root'],source=item.get('source',''),recipe=recipe,arguments=list(arguments),
                                artifact=item.get('artifact',''),build_policy=item.get('build_policy','always'),
                                legacy=bool(recipe and not item.get('artifact'))))
         (destination/'building.txt').write_text(json.dumps(builds,indent=2)+'\n',encoding='utf-8')

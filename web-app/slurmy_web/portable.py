@@ -123,9 +123,8 @@ def export_bundle(directory, host):
                    builds=[{k: str(v) if isinstance(v, Path) else v for k, v in asdict(build).items()} for build in builds],
                    limiter=limiter, axioms=axioms, shared_roots=sorted(shared_roots), default_tptp_root=TPTP_DEFAULT_ROOT,
                    settings={key: data.get(key, default) for key, default in
-                             [('host', host), ('partition', 'CPU-amd'), ('reservation', ''), ('account', ''),
+                             [('partition', 'CPU-amd'), ('reservation', ''), ('account', ''),
                               ('batch_size', 1), ('max_outstanding', 50), ('get_computer_info', True)]})
-    payload['settings']['host'] = host
     output = tempfile.TemporaryFile()
     try:
         with tempfile.TemporaryDirectory(prefix='slurmy-export-') as tmp:
@@ -340,7 +339,7 @@ def import_bundle(stream, name):
         check_pairs.unlink();check_builds.unlink()
 
         repo = os.path.relpath(workflows.REPO, destination)
-        makefile = f'REPO_ROOT := {repo}\nBATCH_SIZE := {batch}\nPAIR_ORDER := {pair_order}\nGET_COMPUTER_INFO := {str(computer_info).lower()}\nSLURMY_MAX_OUTSTANDING := {maximum}\nSLURMY_HOST := {host}\nSLURMY_PARTITION := {partition}\nSLURMY_RESERVATION := {reservation}\nSLURMY_ACCOUNT := {account}\n'
+        makefile = f'REPO_ROOT := {repo}\nBATCH_SIZE := {batch}\nPAIR_ORDER := {pair_order}\nGET_COMPUTER_INFO := {str(computer_info).lower()}\nSLURMY_MAX_OUTSTANDING := {maximum}\nSLURMY_PARTITION := {partition}\nSLURMY_RESERVATION := {reservation}\nSLURMY_ACCOUNT := {account}\n'
         if axiom_lines:
             (staging/'axiom-globs.txt').write_text('\n'.join(axiom_lines)+'\n');makefile += 'AXIOMS := axiom-globs.txt\n'
         makefile += 'include $(REPO_ROOT)/implementation/templates/workflow.mk\n'
@@ -361,12 +360,12 @@ def import_bundle(stream, name):
                         pair_order=payload.get('pair_order', 'solver-major'), building_mode='create',
                         resources=[dict(root=build['root'], source=build.get('source') or '',
                                         mode='script' if build.get('recipe') else 'none',
-                                        script=build.get('recipe') or '', artifact=build.get('artifact') or '',
+                                        script=shlex.join([build['recipe'],*build.get('arguments',[])]) if build.get('recipe') else '', artifact=build.get('artifact') or '',
                                         build_policy=build.get('build_policy', 'always'))
                                    for build in resources])
             data = workflows.resource_roles(data)
-        (staging/'.slurmy-workflow.json').write_text(json.dumps(data, indent=2))
-        (staging/'workflow.json').unlink()
+        data.pop('host',None)
+        (staging/'workflow.json').write_text(json.dumps(data, indent=2))
         # mkdir is the atomic name claim; never replace an existing workflow.
         destination.mkdir()
         try:

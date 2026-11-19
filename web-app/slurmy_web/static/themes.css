@@ -82,11 +82,11 @@ html[data-color-theme] .sidebar {
 }
 html[data-color-theme] :is(.brand,.sidebar nav a[aria-current="page"]) { color: var(--sidebar-ink); }
 html[data-color-theme] .brand span { color: color-mix(in srgb,var(--sidebar-ink) 65%,var(--dark)); }
-html[data-color-theme] :is(.sidebar nav a,.sidebar .theme-toggle,.github-link) {
+html[data-color-theme] :is(.sidebar nav a,.sidebar .theme-toggle,.sidebar-footer-link) {
   color: color-mix(in srgb,var(--sidebar-ink) 80%,var(--dark));
   border-color: color-mix(in srgb,var(--sidebar-ink) 20%,var(--dark));
 }
-html[data-color-theme] .sidebar :is(nav a[aria-current="page"],nav a:hover,.theme-toggle:hover,.github-link:hover) { background: color-mix(in srgb,var(--green) 22%,var(--dark)); }
+html[data-color-theme] .sidebar :is(nav a[aria-current="page"],nav a:hover,.theme-toggle:hover,.sidebar-footer-link:hover) { background: color-mix(in srgb,var(--green) 22%,var(--dark)); }
 html[data-color-theme] .sidebar .theme-toggle { background: transparent; gap: 8px; }
 html[data-color-theme] .pie-tooltip,
 html[data-color-theme] .outcome-cube-tooltip,

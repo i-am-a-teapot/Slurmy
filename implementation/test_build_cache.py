@@ -2,6 +2,9 @@
 import importlib.util
 from pathlib import Path
 import tempfile
+import json
+import os
+import subprocess
 import unittest
 from unittest.mock import patch
 
@@ -11,6 +14,18 @@ spec.loader.exec_module(driver)
 
 
 class BuildCacheTests(unittest.TestCase):
+    def test_python_build_script_runs_with_literal_arguments_and_affects_cache(self):
+        self.recipe.write_text('#!/usr/bin/env python3\nimport os,json,sys\nfrom pathlib import Path\nPath(os.environ["SLURMY_BUILD_OUTPUT"],"solver").write_text(json.dumps(sys.argv[1:]))\n')
+        self.args.recipe_arg=['--configuration=fast','a value with spaces']
+        before=driver.input_fingerprint(self.args)
+        self.args.recipe_arg.append('--extra')
+        self.assertNotEqual(before,driver.input_fingerprint(self.args))
+        stage=self.root/'cluster-build';stage.mkdir()
+        (stage/'recipe.sh').write_text(self.recipe.read_text())
+        script=stage/'job.sh';script.write_text(driver.build_job_script(self.args,has_context=False))
+        subprocess.run(['bash',str(script)],env={**os.environ,'SLURM_SUBMIT_DIR':str(stage)},capture_output=True,text=True,check=True)
+        self.assertEqual(json.loads((stage/'output/solver').read_text()),self.args.recipe_arg)
+
     def setUp(self):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)

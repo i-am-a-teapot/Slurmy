@@ -163,7 +163,13 @@ mkdir -p -- "$SLURMY_BUILD_WORK" "$SLURMY_BUILD_OUTPUT"
 {context_setup}
 
 cd -- "$SLURMY_BUILD_WORK"
-bash "$SLURMY_BUILD_ROOT/recipe.sh"
+IFS= read -r recipe_first < "$SLURMY_BUILD_ROOT/recipe.sh" || true
+if [[ "$recipe_first" == '#!'* ]]; then
+    chmod u+x "$SLURMY_BUILD_ROOT/recipe.sh"
+    "$SLURMY_BUILD_ROOT/recipe.sh" {shlex.join(getattr(args,'recipe_arg',[]))}
+else
+    bash "$SLURMY_BUILD_ROOT/recipe.sh" {shlex.join(getattr(args,'recipe_arg',[]))}
+fi
 
 {'# The recipe built in its working folder; return the full resulting tree.' if args.in_place else '# The recipe wrote selected runtime files to SLURMY_BUILD_OUTPUT.'}
 {'cp -a -- "$SLURMY_BUILD_WORK/." "$SLURMY_BUILD_OUTPUT/"' if args.in_place else ':'}
@@ -406,7 +412,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--version", action="version", version=f"Slurmy build {VERSION}")
     parser.add_argument("--host", default=DEFAULT_HOST, help="SSH host alias (default: $SLURMY_HOST, or datalab)")
     parser.add_argument("--name", required=True, help="short build name used in job and directory names")
-    parser.add_argument("--recipe", required=True, metavar="FILE", help="Bash build recipe to run on the compute node")
+    parser.add_argument("--recipe-arg", action="append", default=[], help="Literal build-script argument; use --recipe-arg=VALUE for flags")
+    parser.add_argument("--recipe", required=True, metavar="FILE", help="Build script to run on the compute node (uses its shebang)")
     parser.add_argument("--context", metavar="DIRECTORY", help="optional local directory unpacked into the build work directory")
     parser.add_argument("--output", required=True, metavar="DIRECTORY", help="local directory that receives the built artifacts")
     parser.add_argument("--artifact", action="append", type=checked_artifact, metavar="RELATIVE_PATH", help="required path below the output directory; repeat as needed")

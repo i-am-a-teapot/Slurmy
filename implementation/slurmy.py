@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import base64
 import csv
 from dataclasses import dataclass
 import hashlib
@@ -160,6 +161,7 @@ class BuildSpec:
     source: Path | None = None
     artifact: str | None = None
     build_policy: str = "always"
+    arguments: tuple[str, ...] = ()
 
 
 def read_builds(filename: Path, check_paths: bool = True) -> list[BuildSpec]:
@@ -194,7 +196,10 @@ def read_builds(filename: Path, check_paths: bool = True) -> list[BuildSpec]:
             policy = record.get("build_policy", "always")
             if policy not in {"always", "changed"}:
                 raise SlurmyError("Unknown build policy")
-            builds.append(BuildSpec(root, recipe, source, artifact, policy))
+            arguments=record.get("arguments", [])
+            if not isinstance(arguments,list) or not all(isinstance(arg,str) and "\x00" not in arg for arg in arguments):
+                raise SlurmyError("Build script arguments must be a list of strings")
+            builds.append(BuildSpec(root, recipe, source, artifact, policy, tuple(arguments)))
         return builds
     lines = content.splitlines()
     if len(lines) % 2:
@@ -546,11 +551,13 @@ def generate(jobpairs: Path, building: Path, limiter_file: Path,
                 # recipe cannot leave a stale copy in submit.sh.files.
                 recipe_arg = shlex.quote(str(build.recipe))
             else:
-                body = build.recipe.read_text(encoding="utf-8")
-                write_script(wrapper, '#!/usr/bin/env bash\nset -euo pipefail\nOUTPUT_DEST=$SLURMY_BUILD_OUTPUT\nexport SLURMY_BUILD_OUTPUT=$SLURMY_BUILD_WORK\n(\n' + body + '\n)\ncp -a "$SLURMY_BUILD_WORK/." "$OUTPUT_DEST/"\ntouch "$OUTPUT_DEST/.slurmy-built"\n')
+                payload=base64.b64encode(build.recipe.read_bytes()).decode()
+                launch='original=$(mktemp)\ntrap \'rm -f -- "$original"\' EXIT\nprintf %s PAYLOAD | base64 -d > "$original"\nIFS= read -r first < "$original" || true\nif [[ "$first" == \'#!\'* ]]; then chmod u+x "$original"; "$original" "$@"; else bash "$original" "$@"; fi\n'.replace('PAYLOAD',shlex.quote(payload))
+                write_script(wrapper, '#!/usr/bin/env bash\nset -euo pipefail\nOUTPUT_DEST=$SLURMY_BUILD_OUTPUT\nexport SLURMY_BUILD_OUTPUT=$SLURMY_BUILD_WORK\n'+launch+'\ncp -a "$SLURMY_BUILD_WORK/." "$OUTPUT_DEST/"\ntouch "$OUTPUT_DEST/.slurmy-built"\n')
                 recipe_arg = f'"$HERE/recipe_{i}.sh"'
             command = ('"${SLURMY_PYTHON:-python3}" "$HERE/driver.py" --host "${SLURMY_HOST:-datalab}" '
                        f'--name "$WORKFLOW_NAME-build-{i}" --recipe {recipe_arg} '
+                       + ''.join('--recipe-arg='+shlex.quote(arg)+' ' for arg in build.arguments)
                        + (f'--context {shlex.quote(str(build.source))} ' if build.source else '')
                        + ('--in-place ' if build.source == build.root else '')
                        + f'--output {shlex.quote(str(build.root))} '

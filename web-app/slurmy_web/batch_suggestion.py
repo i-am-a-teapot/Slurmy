@@ -129,13 +129,26 @@ def suggest(data):
     options = (data.get('pair_order') or 'solver-major', data.get('max_outstanding', 50), nodes,
                getattr(nodes, 'active_tasks', None))
     fit = submission_fit(configurations, group_counts, data.get('batch_size') or balance, *options, account_submit_limit=submit_limit)
-    selected = max(balance, fit['recommended_batch_size'] or 1)
+    target = max(balance, fit['recommended_batch_size'] or 1)
+    wall_limits = [int(config.get('wc_limit', 1)) for config in configurations]
+    overhead = 80 if data.get('get_computer_info', True) else 30
+    wall_limit = 6*60*60
+    unknown = any(limit == 0 for limit in wall_limits)
+    max_wall = max(wall_limits)
+    time_capacity = None if unknown else (wall_limit-60)//(max_wall+overhead)
+    selected = min(target, max(1,time_capacity)) if time_capacity is not None else target
     suggestion = submission_fit(configurations, group_counts, selected, *options, account_submit_limit=submit_limit)
     result.update(fit)
     result.update(batch_size=selected, balance_batch_size=balance,
                   fit_batch_size=fit['recommended_batch_size'],
                   suggested_batches=suggestion['estimated_batches'],
                   suggested_fits=suggestion['estimated_batches'] <= suggestion['submission_budget'])
+    result.update(wall_limit_seconds=wall_limit, batch_startup_seconds=60,
+                  pair_overhead_seconds=overhead, max_pair_wall_seconds=max_wall,
+                  wall_time_unknown=unknown, wall_time_capacity=time_capacity,
+                  wall_single_pair_fits=None if unknown else time_capacity>=1,
+                  unconstrained_batch_size=target,
+                  selected_size_exceeds_wall=False if unknown else int(data.get('batch_size') or selected)>time_capacity)
     # One recommendation is used by the field, explanation and submission warning.
     result.update(configuration_count=len(configurations), problem_count=None if mode=='jobpairs' else len(problems),
                   configuration_names=[str(c.get('solver_name') or f'Solver {i+1}') for i,c in enumerate(configurations)],

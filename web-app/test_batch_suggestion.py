@@ -155,6 +155,23 @@ class BatchSuggestionTests(unittest.TestCase):
         self.assertIsNone(plan['account_submit_limit'])
         self.assertIsNone(plan['account_free_slots'])
 
+    def test_six_hour_budget_caps_suggestion_even_when_submission_window_cannot_fit(self):
+        configurations=[config(1,solver_name='A',wc_limit=3600)]
+        with patch.object(batch,'partition_nodes',return_value=self.nodes),patch.object(batch.workflows,'problem_glob',return_value=('pattern',[str(i) for i in range(1000)])):
+            result=batch.suggest(dict(host='datalab',partition='CPU-amd',mode='interactive',configurations=configurations,globs=['pattern'],max_outstanding=50,batch_size=100,get_computer_info=True))
+        self.assertEqual(result['wall_time_capacity'],5)
+        self.assertEqual(result['batch_size'],5)
+        self.assertEqual(result['suggested_batches'],200)
+        self.assertFalse(result['suggested_fits'])
+        self.assertTrue(result['selected_size_exceeds_wall'])
+        self.assertLessEqual(60+5*(3600+80),21600)
+
+    def test_unbounded_wall_limits_are_not_given_a_false_six_hour_guarantee(self):
+        with patch.object(batch,'partition_nodes',return_value=self.nodes),patch.object(batch.workflows,'problem_glob',return_value=('pattern',['a','b'])):
+            result=batch.suggest(dict(host='datalab',partition='CPU-amd',mode='interactive',configurations=[config(1,wc_limit=0)],globs=['pattern']))
+        self.assertTrue(result['wall_time_unknown'])
+        self.assertIsNone(result['wall_time_capacity'])
+
     def test_existing_account_tasks_reduce_available_slots_and_full_queue_has_no_immediate_fit(self):
         plan=batch.submission_fit([config(1)],[1000],10,'problem-major',32,self.nodes,active_tasks=40)
         self.assertEqual(plan['submission_budget'],10)

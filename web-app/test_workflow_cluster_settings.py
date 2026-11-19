@@ -166,7 +166,7 @@ class ClusterSettingsTests(unittest.TestCase):
                 destination, files, count = workflows.specification(data, root / 'workflow')
             self.assertEqual(count, 1)
             self.assertIn('SLURMY_RESERVATION := E192-04', files['Makefile'])
-            self.assertEqual(json.loads(files['.slurmy-workflow.json'])['reservation'], 'E192-04')
+            self.assertEqual(json.loads(files['workflow.json'])['reservation'], 'E192-04')
             destination.mkdir()
             for filename, body in files.items():
                 (destination / filename).write_text(body)

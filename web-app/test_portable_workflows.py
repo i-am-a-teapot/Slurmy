@@ -211,7 +211,7 @@ class PortableWorkflowTests(unittest.TestCase):
         with self.bundle() as bundle:
             imported, _ = portable.import_bundle(bundle, 'problem-major')
         self.assertIn('PAIR_ORDER := problem-major', (imported/'Makefile').read_text())
-        self.assertEqual(json.loads((imported/'.slurmy-workflow.json').read_text())['pair_order'], 'problem-major')
+        self.assertEqual(json.loads((imported/'workflow.json').read_text())['pair_order'], 'problem-major')
 
     def empty_remote(self,output):
         with tarfile.open(fileobj=output,mode='w'):pass

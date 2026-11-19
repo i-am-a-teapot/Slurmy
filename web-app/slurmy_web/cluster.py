@@ -6,6 +6,8 @@ import re
 import json
 import math
 import shutil
+import shlex
+from pathlib import Path
 import subprocess
 import time
 from collections import defaultdict
@@ -55,20 +57,7 @@ printf 'HOSTS\n'
     printf '%s|%s\n' "$expression" "$hosts"
 done
 printf 'CALLS\n'
-printf '%s\n' "$jobs" | while IFS='|' read -r slurm_id user name state nodes cpus elapsed limit nodelist reason directory comment; do
-    [[ "$state" == RUNNING* && "$directory" == "$HOME"/slurmy/jobs/* ]] || continue
-    job_name=${directory##*/}
-    [[ "$directory" == "$HOME/slurmy/jobs/$job_name" ]] || continue
-    [[ "$comment" =~ :batch=([0-9]+)$ ]] || continue
-    batch=${BASH_REMATCH[1]}
-    progress=$(printf '%s/progress/batch_%06d.csv' "$directory" "$batch")
-    [[ -f "$progress" && -f "$directory/manifest.jsonl" ]] || continue
-    IFS=, read -r call_state task_id _ < "$progress" || continue
-    call_state=${call_state//\"/}; task_id=${task_id//\"/}
-    [[ "$call_state" == running && "$task_id" =~ ^[0-9]+$ ]] || continue
-    definition=$(sed -n "$((task_id + 1))p" "$directory/manifest.jsonl")
-    [[ -n "$definition" ]] && printf '%s|%s|%s\n' "$slurm_id" "$task_id" "$definition"
-done
+__CURRENT_CALLS__
 printf 'METADATA\n'
 # Only metadata from the connected account's own, direct Slurmy job folders is
 # readable. SLURM exposes other users' queue entries, not their private files.
@@ -84,6 +73,8 @@ printf '%s\n' "$jobs" | awk -F'|' 'NF >= 12 {print $11}' | sort -u | while IFS= 
     printf '%s|%s|%s\n' "$directory" "$calls" "${batches:-0}"
 done
 '''
+
+REMOTE_STATUS_SCRIPT=REMOTE_STATUS_SCRIPT.replace('__CURRENT_CALLS__', "printf '%s\\n' \"$jobs\" | python3 -c "+shlex.quote(Path(__file__).with_name('cluster_progress.py').read_text()))
 
 
 def parse_status(host, partition, output):
@@ -103,9 +94,9 @@ def parse_status(host, partition, output):
         try:
             slurm_id, task_id, encoded = line.split('|', 2)
             call = json.loads(encoded)
-            if int(task_id) != call.get('task_id'):
+            if int(task_id) != int(call.get('task_id', -1)):
                 continue
-            active_calls[slurm_id] = dict(id=int(task_id), solver=str(call.get('solver') or call.get('solver_name') or call.get('system') or 'Solver'),
+            active_calls[slurm_id] = dict(id=int(task_id), batch_id=call.get('batch_id'), solver=str(call.get('solver') or call.get('solver_name') or call.get('system') or 'Solver'),
                                           problem=str(call.get('problem') or 'Problem'),
                                           cores=int(call['cores']) if str(call.get('cores', '')).isdigit() else None,
                                           isolation=('node' if call.get('exclusive_node') else 'socket' if call.get('exclusive_cpu') else 'shared')

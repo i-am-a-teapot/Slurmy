@@ -86,7 +86,7 @@ class WorkflowRecoveryTests(unittest.TestCase):
                 with self.subTest(example=source.name):
                     destination=workflows.duplicate(source,source.name+'-copy')
                     self.assertTrue((destination/'Makefile').is_file())
-                    self.assertTrue((destination/'.slurmy-workflow.json').is_file())
+                    self.assertTrue((destination/'workflow.json').is_file())
                     self.assertFalse((destination/'submit.sh.files').exists())
 
     def test_rename_updates_prepared_paths_bundles_and_history_without_ssh(self):
@@ -108,7 +108,7 @@ class WorkflowRecoveryTests(unittest.TestCase):
         self.assertEqual((destination/'submit.sh').stat().st_mode & 0o777,0o755)
         with tarfile.open(destination/'submit.sh.files/call-bundles/batch_000000.tar.gz') as archive:
             self.assertEqual(archive.extractfile('0/config.sh').read().decode(),expected)
-        data=json.loads((destination/'.slurmy-workflow.json').read_text())
+        data=json.loads((destination/'workflow.json').read_text())
         self.assertEqual(data['name'],'original-new')
         self.assertIn(original_path,data['_previous_directories'])
         self.assertFalse(source.exists())

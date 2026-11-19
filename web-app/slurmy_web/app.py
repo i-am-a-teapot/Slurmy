@@ -635,7 +635,7 @@ def create_app():
 
     def created_label(path):
         try:
-            value = json.loads((path / '.slurmy-workflow.json').read_text()).get('_created_at')
+            value = json.loads(workflows.definition_path(path).read_text()).get('_created_at')
             epoch = float(value) if value is not None else path.stat().st_ctime
             return datetime.fromtimestamp(epoch).astimezone().strftime('%Y-%m-%d %H:%M')
         except (OSError, ValueError, TypeError, OverflowError):
@@ -765,7 +765,7 @@ def create_app():
         folder = request.args.get('directory')
         if folder:
             linked = {folder}
-            manifest = Path(folder) / '.slurmy-workflow.json'
+            manifest = workflows.definition_path(Path(folder))
             if manifest.is_file():
                 linked.update(json.loads(manifest.read_text(encoding='utf-8')).get('_previous_directories', []))
             items = [job for job in items if job['directory'] in linked]
@@ -955,6 +955,9 @@ def create_app():
             else:
                 pattern, matches = workflows.problem_glob(data.get('value'), materialize=False, host=host())
             return jsonify(path=pattern, count=len(matches), sample=matches[:5])
+        if data.get('kind')=='build-script':
+            value, arguments=workflows.build_script(data.get('value'))
+            return jsonify(path=str(value),arguments=list(arguments))
         value = workflows.existing(data.get('value'), data.get('kind'))
         return jsonify(path=str(value))
 
