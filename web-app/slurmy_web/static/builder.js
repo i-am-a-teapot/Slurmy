@@ -365,7 +365,7 @@ if(document.body.dataset.page==='new'){
  function payload(){const names=['name','partition','account','reservation','batch_size','max_outstanding','pair_order','mode','jobpairs','configurations_file','building_mode','building_file','limiter_mode','limiter_file','limiter'];const data=Object.fromEntries(names.map(n=>[n,rootValue(n)]));data.host=rootValue('host');data.get_computer_info=form.querySelector('[name="get_computer_info"]').checked;const cards=[...document.querySelectorAll('.configuration')];data.configurations=cards.map(card=>{const row=fields(card);for(const key of Object.keys(row))if(key.startsWith('build_'))delete row[key];row.cpus='auto';return row;});data.resources=[...document.querySelectorAll('.resource')].sort((a,b)=>Number(a.dataset.resourceOrder)-Number(b.dataset.resourceOrder)).filter(node=>data.mode!=='interactive'||node.dataset.resourceRole==='limiter').map(node=>({...fields(node),role:node.dataset.resourceRole}));if(data.mode==='interactive'&&data.building_mode==='create'){const seen=new Map();for(const card of cards){const value=fields(card);const resource={role:'solver',root:value.solver_directory,mode:value.build_mode,source:value.build_source,script:value.build_script,build_policy:value.build_policy,artifact:value.build_mode==='script'?solverArtifact(value.command,value.solver_directory):''};const previous=seen.get(resource.root);if(previous){if(resource.mode!=='none'&&previous.mode!=='none'&&JSON.stringify(resource)!==JSON.stringify(previous))throw new Error(`Conflicting build settings for solver root ${resource.root}`);if(previous.mode==='none'&&resource.mode!=='none')Object.assign(previous,resource);}else{seen.set(resource.root,resource);data.resources.push(resource);}}}data.globs=[...document.querySelectorAll('[name="glob"]')].map(n=>n.value);data.axiom_mode='custom';data.axiom_globs=[...document.querySelectorAll('[name="axiom_glob"]')].map(n=>n.value);return data;}
  function solverArtifact(command,root){const executable=command.trim().match(/^(?:'([^']+)'|"([^"]+)"|(\S+))/)?.slice(1).find(Boolean)||'';if(!executable)throw new Error('Enter the solver command before configuring its build.');const path=executable.startsWith(root+'/')?executable.slice(root.length+1):executable.replace(/^\.\//,'');if(path.startsWith('/')||path==='..'||path.startsWith('../')||path.includes('/../')||path.includes('{{'))throw new Error('For a remote build, start the solver command with an executable relative to the solver root.');return path;}
  const batchInput=form.querySelector('[name="batch_size"]');
- let automaticBatch=!initial.batch_size,batchRequest=0,batchTimer=null,lastBatchSuggestion=null;
+ let batchRequest=0,batchTimer=null,lastBatchSuggestion=null;
  let acceptedBatchWarning=null,batchFitCheck=null;
  const batchDialog=$('#batch-explanation-dialog');let lastBatchPlan=null;
  $('#close-batch-explanation').addEventListener('click',()=>batchDialog.close());
@@ -444,15 +444,14 @@ if(document.body.dataset.page==='new'){
    const data=await api('/api/suggest-batch-size',payload());
    if(request!==batchRequest)return;
    lastBatchSuggestion=data.batch_size;lastBatchPlan=data;renderBatchExplanation(data);
-   if(automaticBatch)batchInput.value=data.batch_size;
    status.className='validation valid';
    status.textContent=`Suggested: ${data.batch_size} ${data.batch_size===1?'pair':'pairs'} per batch · ${data.suggested_batches} ${data.suggested_batches===1?'batch':'batches'}. ${data.suggested_fits?'Fits the current submission window.':'Some batches will need to wait.'}`;
-   use.hidden=automaticBatch||Number(batchInput.value)===data.batch_size;
+   use.hidden=Number(batchInput.value)===data.batch_size;
    updateStepStates();
   }catch(error){if(request!==batchRequest)return;lastBatchSuggestion=null;lastBatchPlan=null;status.className='validation invalid';status.textContent=`Could not suggest a batch size: ${error.message} You can enter a size manually.`;}
  }
- batchInput.addEventListener('input',()=>{automaticBatch=!batchInput.value;$('#use-batch-suggestion').hidden=lastBatchSuggestion===null||Number(batchInput.value)===lastBatchSuggestion;if(automaticBatch&&step===4)suggestBatchSize();});
- $('#use-batch-suggestion').addEventListener('click',()=>{if(lastBatchSuggestion!==null){automaticBatch=true;batchInput.value=lastBatchSuggestion;$('#use-batch-suggestion').hidden=true;updateStepStates();}});
+ batchInput.addEventListener('input',()=>{$('#use-batch-suggestion').hidden=lastBatchSuggestion===null||Number(batchInput.value)===lastBatchSuggestion;});
+ $('#use-batch-suggestion').addEventListener('click',()=>{if(lastBatchSuggestion!==null){batchInput.value=lastBatchSuggestion;$('#use-batch-suggestion').hidden=true;updateStepStates();}});
  form.addEventListener('input',event=>{
   if(event.target===batchInput)return;
   ++batchRequest;lastBatchSuggestion=null;lastBatchPlan=null;clearTimeout(batchTimer);
@@ -485,7 +484,7 @@ if(document.body.dataset.page==='new'){
   const explanation=timeWarning+`This workflow creates approximately ${plan.estimated_batches} batches. ${plan.account_submit_limit===null?`No account submission cap was reported for ${plan.account||'the selected account'}.`:`The selected account permits up to ${plan.account_submit_limit??50} submitted SLURM tasks for your user, including pending tasks and tasks outside Slurmy.`} Your submitted-task setting is ${current.max_outstanding}.${plan.account_submit_limit!==null&&plan.account_active_tasks!==null?` Your account currently has ${plan.account_active_tasks} active/pending tasks, leaving ${plan.account_free_slots} slots.`:''} Keep this computer awake and the local server running until the final batch is accepted; already submitted tasks continue if you disconnect. `+(recommendation?`Use ${recommendation} solver-problem pairs per batch to create ${plan.recommended_batches} ${plan.recommended_batches===1?'batch':'batches'}, ${plan.suggested_fits?'fitting within the current submission window and any reported account limit':'respecting the time budget, but requiring some batches to wait for submission slots'}. Other submissions can change availability.`:`${plan.submission_budget===0?'Your account currently has no free submission slots; even a single batch must wait. ':''}At least ${plan.minimum_batches} separate batches are required by the distinct SLURM allocation settings. Increasing batch size alone cannot fit them into the current ${plan.submission_budget}-task window. Adjust the allocation requirements or submitted-task setting, or allow local submission to wait.`);
   const choice=await SlurmyDialog.choose({title:plan.selected_size_exceeds_wall?'Batch Size Can Exceed Six Hours':'Some Batches Will Need to Wait',message:explanation,choices:[...(recommendation?[{value:'use',label:`Use Batch Size ${recommendation}`}]:[]),{value:'keep',label:'Keep Batch Size',secondary:true}]});
   if(!choice)throw new Error('Review the batch size before continuing.');
-  if(choice==='use'){batchInput.value=recommendation;automaticBatch=false;updateStepStates();}
+  if(choice==='use'){batchInput.value=recommendation;updateStepStates();}
   acceptedBatchWarning=JSON.stringify(payload());
  }
  async function validSection(){
