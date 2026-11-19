@@ -48,7 +48,7 @@ class PortableWorkflowTests(unittest.TestCase):
 
     def test_import_resolves_account_for_current_cluster_user(self):
         from slurmy_web import accounts
-        for available,expected in [(['default'],''),(['other','default'],'other'),(['cpuopt','default'],'cpuopt')]:
+        for available,expected in [(['default'],'default'),(['other','default'],'other'),(['cpuopt','default'],'cpuopt'),(['research'],'research'),(['alpha','beta','default'],'default')]:
             with self.subTest(accounts=available):
                 bundle=self.bundle();self.addCleanup(bundle.close)
                 with patch.object(accounts,'memberships',return_value={'accounts':available}) as lookup:

@@ -39,11 +39,12 @@ def memberships(host):
 
 
 def choose(accounts, requested=None):
-    """Preserve available explicit choices; otherwise prefer a non-default account."""
-    if requested in accounts:
+    """Preserve explicit memberships; infer a choice from the available accounts."""
+    available = sorted(set(accounts))
+    if requested in available:
         return requested
-    if requested == '' and 'default' in accounts:
-        return ''
-    if 'cpuopt' in accounts:
-        return 'cpuopt'
-    return next((account for account in sorted(accounts) if account != 'default'), '')
+    if not available:
+        raise ValueError('No SLURM accounts are available.')
+    if len(available) >= 3 and 'default' in available:
+        return 'default'
+    return next((account for account in available if account != 'default'), available[0])

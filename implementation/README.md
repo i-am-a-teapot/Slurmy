@@ -572,9 +572,11 @@ placement.
 
 The workflow editor discovers SLURM account memberships for the currently selected
 SSH user using a read-only `sacctmgr show association` query. Results are cached
-per host for five minutes. New workflows prefer `cpuopt` (or the first available
-non-default account); saved accessible choices are preserved. When only `default`
-is available, the account control is hidden. Lookup failures show a retry action
+per host for five minutes. With one account, it is selected and the control is
+hidden. With two accounts, the non-default account is preferred. With three or
+more, `default` is preferred if available; otherwise the first account
+alphabetically is used. Saved accessible choices are preserved. Only actual
+memberships appear in the selector; there is no extra 'Cluster default' option. Lookup failures show a retry action
 and do not masquerade as default-only membership. Portable imports preserve an
 available account preference or select an available replacement for the importing
 user, updating both JSON and Makefile. Membership discovery is required during

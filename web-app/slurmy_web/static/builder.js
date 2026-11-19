@@ -52,12 +52,12 @@ if(document.body.dataset.page==='new'){
   accountsReady=false;accountRetry.hidden=true;accountLoading.hidden=false;accountLoading.textContent='Checking SLURM account memberships…';accountSelect.disabled=true;
   try{
    const result=await api('/api/slurm-accounts?'+params({host:rootValue('host')}));
-   const requested=accountSelect.dataset.loaded?accountSelect.value:(editing?(initial.account||''):undefined);
-   accountSelect.replaceChildren(new Option('Cluster default',''));
+   const requested=accountSelect.dataset.loaded?accountSelect.value:(editing?initial.account:undefined);
+   accountSelect.replaceChildren();
    for(const name of result.accounts)accountSelect.add(new Option(name,name));
-   const selected=result.accounts.includes(requested)?requested:(requested===''&&result.accounts.includes('default')?'':result.preferred);
+   const selected=result.accounts.includes(requested)?requested:result.preferred;
    accountSelect.value=selected;accountSelect.dataset.loaded='true';
-   accountField.hidden=result.accounts.every(name=>name==='default');
+   accountField.hidden=result.accounts.length===1;
    accountStatus.textContent=(requested&&requested!==selected?`“${requested}” is unavailable for this cluster user; using ${selected||'the cluster default'}. `:'')+'Accounts available to your cluster user. '+(result.cached?'Checked within the last five minutes.':'Memberships just checked.');
    accountLoading.hidden=true;accountsReady=true;
   }catch(error){accountField.hidden=true;accountLoading.textContent=error.message;accountRetry.hidden=false;}

@@ -26,13 +26,16 @@ class AccountTests(unittest.TestCase):
             self.assertIn('$(id -un)',run.call_args.args[0][-1])
 
     def test_choices_preserve_accessible_settings_and_remap_unavailable_portable_preferences(self):
-        self.assertEqual(accounts.choose(['default']),'')
-        self.assertEqual(accounts.choose(['default'],'cpuopt'),'')
+        self.assertEqual(accounts.choose(['default']),'default')
+        self.assertEqual(accounts.choose(['default'],'cpuopt'),'default')
         self.assertEqual(accounts.choose(['other','default'],'cpuopt'),'other')
         self.assertEqual(accounts.choose(['cpuopt','default'],'default'),'default')
-        self.assertEqual(accounts.choose(['cpuopt','default'],''),'')
+        self.assertEqual(accounts.choose(['cpuopt','default'],''),'cpuopt')
         self.assertEqual(accounts.choose(['cpuopt','default']),'cpuopt')
-        self.assertEqual(accounts.choose(['another','cpuopt','default']),'cpuopt')
+        self.assertEqual(accounts.choose(['another','cpuopt','default']),'default')
+        self.assertEqual(accounts.choose(['research']),'research')
+        self.assertEqual(accounts.choose(['beta','alpha']),'alpha')
+        self.assertEqual(accounts.choose(['gamma','beta','alpha']),'alpha')
 
     @unittest.skipUnless(shutil.which('node'), 'Node is needed for the browser control regression check')
     def test_dropdown_hides_default_only_and_preserves_saved_choices(self):
@@ -49,8 +52,12 @@ const api=async()=>{if(result instanceof Error)throw result;return result;};
 """+function+"""
 (async()=>{
  await loadAccounts(); assert.equal(accountSelect.value,'cpuopt');assert.equal(accountField.hidden,false);
- result={accounts:['default'],preferred:'',cached:false};
- await loadAccounts();assert.equal(accountSelect.value,'');assert.equal(accountField.hidden,true);assert.equal(accountsReady,true);
+ result={accounts:['default'],preferred:'default',cached:false};
+ await loadAccounts();assert.equal(accountSelect.value,'default');assert.equal(accountField.hidden,true);assert.equal(accountsReady,true);
+ result={accounts:['research'],preferred:'research',cached:false};
+ await loadAccounts();assert.equal(accountSelect.value,'research');assert.equal(accountField.hidden,true);
+ result={accounts:['cpuopt','other','default'],preferred:'default',cached:false};accountSelect.dataset={};
+ await loadAccounts();assert.equal(accountSelect.value,'default');assert.equal(accountField.hidden,false);
  editing=true;initial={account:'default'};accountSelect.dataset={};
  result={accounts:['cpuopt','default'],preferred:'cpuopt',cached:true};
  await loadAccounts();assert.equal(accountSelect.value,'default');assert.equal(accountField.hidden,false);
