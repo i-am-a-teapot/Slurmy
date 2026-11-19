@@ -95,6 +95,20 @@ class BatchInspectorTests(unittest.TestCase):
         self.assertGreater(response.json['page'],0)
         self.assertEqual(client.get('/api/jobs/example/batches?batch=9999').status_code,404)
 
+    def test_custom_page_sizes_over_one_hundred_are_honored_for_batches_and_pairs(self):
+        job=self.job()
+        job.metadata['planned_batch_tasks']=[list(range(250))]+[[task] for task in range(250,450)]
+        job.tasks={task:TaskDefinition(task,solver='A',problem=f'/problems/{task}.p') for task in range(450)}
+        client=self.client(job)
+        summaries=client.get('/api/jobs/example/batches?per_page=150').json
+        self.assertEqual(len(summaries['batches']),150)
+        pairs=client.get('/api/jobs/example/batches/0?per_page=150').json
+        self.assertEqual(len(pairs['tasks']),150)
+        second=client.get('/api/jobs/example/batches/0?per_page=150&page=1').json
+        self.assertEqual(len(second['tasks']),100)
+        self.assertEqual(second['tasks'][0]['position'],151)
+        self.assertEqual(client.get('/api/jobs/example/batches?per_page=10001').status_code,400)
+
     def test_unknown_batch_and_invalid_page_are_rejected(self):
         client=self.client(self.job())
         self.assertEqual(client.get('/api/jobs/example/batches/99').status_code,404)

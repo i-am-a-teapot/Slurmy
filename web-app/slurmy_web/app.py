@@ -873,7 +873,6 @@ def create_app():
         from .batches import batch_summaries, batch_members
         job = job_snapshot(job_id)
         page_number, per_page, _, _ = call_page_args()
-        per_page = min(per_page, 100)
         if request.args.get('batch') is not None:
             target = request.args.get('batch', type=int)
             ids = sorted(batch_members(job)[0])
@@ -891,7 +890,6 @@ def create_app():
         if batch_id not in groups:
             abort(404, 'Batch not found in this job.')
         page_number, per_page, _, _ = call_page_args()
-        per_page = min(per_page, 100)
         ids = groups[batch_id]
         start = page_number * per_page
         rows = list(task_rows(job, ids[start:start + per_page]))
