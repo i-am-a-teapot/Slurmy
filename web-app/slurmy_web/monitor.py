@@ -428,7 +428,7 @@ __SZS_AWK__
     fi
 done
 
-if queue_snapshot=$(squeue -r -h -u "$USER" -o '%i|%F|%K|%T|%M|%L|%j|%Z|%R' 2>/dev/null); then
+if queue_snapshot=$(squeue -r -h -u "$USER" -o '%i|%F|%K|%T|%M|%L|%j|%Z|%R|%V|%S' 2>/dev/null); then
     printf 'QUEUE_AVAILABLE\0true\0SQUEUE\0'
     printf '%s\n' "$queue_snapshot" | awk -F '|' -v prefix="$BASE/" 'index($8, prefix) == 1'
 else
@@ -998,8 +998,10 @@ def parse_slurm_lines(payload: str, source: str) -> list[SlurmRecord]:
                     time_left=fields[5],
                     job_name=fields[6],
                     workdir=fields[7],
-                    location="|".join(fields[8:]),
+                    location=fields[8] if len(fields) >= 11 else "|".join(fields[8:]),
                     source=source,
+                    submitted=fields[9] if len(fields) >= 11 else "",
+                    start=fields[10] if len(fields) >= 11 and slurm_state_code(fields[3]) != "PENDING" else "",
                 )
             )
         elif source == "accounting" and len(fields) >= 10:

@@ -37,6 +37,27 @@ class BatchInspectorTests(unittest.TestCase):
         self.assertEqual([(row['total'],row['finished'],row['solvers']) for row in summary['batches']],[(4,1,['A']),(4,0,['B'])])
         self.assertEqual(summary['batches'][0]['state'],'Unfinished')
 
+    def test_mixed_solver_batch_and_queue_timestamps_are_preserved(self):
+        from slurmy_web.monitor import parse_slurm_lines
+        import slurm_api
+        job=self.job();job.tasks[2]=TaskDefinition(2,solver='B',problem='/problems/2.p')
+        record,=parse_slurm_lines('123_0|123|0|RUNNING|1:00|5:00|job|/jobs/example|node1|2026-11-19T10:00:00|2026-11-19T10:02:00','queue')
+        job.slurm=[record]
+        row=batch_summaries(job,{0:record},0,25)['batches'][0]
+        self.assertEqual(row['solvers'],['A','B'])
+        self.assertEqual(row['scheduled'],'2026-11-19T10:00:00')
+        self.assertEqual(row['started'],'2026-11-19T10:02:00')
+        self.assertEqual(row['node'],'node1')
+        pending,=parse_slurm_lines('123_0|123|0|PENDING|0|5:00|job|/jobs/example|Priority|2026-11-19T10:00:00|2026-11-20T10:02:00','queue')
+        row=batch_summaries(job,{0:pending},0,25)['batches'][0]
+        self.assertIsNone(row['started'])
+        legacy,=parse_slurm_lines('123_0|123|0|RUNNING|1:00|5:00|job|/jobs/example|node1','queue')
+        # Accounting fills timestamps when an older queue snapshot lacks them.
+        row=batch_summaries(job,{0:legacy},0,25)['batches'][0]
+        self.assertEqual(row['started'],'2026-11-19T10:02:00')
+        self.assertEqual(slurm_api.queue_timestamp(0),'Unknown')
+        self.assertEqual(slurm_api.queue_timestamp(1),'1970-01-01T00:00:01+00:00')
+
     def test_detail_pagination_only_builds_requested_rows_and_preserves_stale_flag(self):
         client=self.client(self.job(),stale=True)
         with patch.object(web,'unfinished_call',wraps=web.unfinished_call) as diagnostics:

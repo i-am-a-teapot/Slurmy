@@ -38,8 +38,19 @@ def batch_summaries(job, allocations, page, per_page):
             state = 'Unfinished'
         else:
             state = 'Not submitted'
+        # Queue rows take precedence for state; accounting can fill missing timestamps.
+        matching = [item for item in job.slurm if record and item.array_job_id == record.array_job_id
+                    and item.array_task_id == record.array_task_id]
+        def timestamp(field):
+            for item in ([record] if record else []) + matching:
+                value = getattr(item, field, '')
+                if value and value.lower() not in {'unknown', 'n/a', 'none', '0', '—'}:
+                    return value
+            return None
+        scheduled = timestamp('submitted')
+        started = timestamp('start') if not record or record.state.upper() != 'PENDING' else None
         solvers = sorted({job.tasks[task].solver for task in members if task in job.tasks})
         rows.append(dict(id=batch, total=len(members), finished=finished, state=state,
-                         solvers=solvers, slurm_id=record.display_id if record else '',
+                         solvers=solvers, scheduled=scheduled, started=started, slurm_id=record.display_id if record else '',
                          node=record.location if record and record.state.upper() in {'RUNNING', 'COMPLETING'} else ''))
     return dict(batches=rows, total=len(ids), membership_estimated=estimated)

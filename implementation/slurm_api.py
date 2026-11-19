@@ -219,6 +219,15 @@ def elapsed(job):
     return str(max(0, int(time.time())-start)) if start else '0'
 
 
+def queue_timestamp(value):
+    from datetime import datetime, timezone
+    try:
+        epoch = number(value)
+        return datetime.fromtimestamp(epoch, timezone.utc).isoformat() if epoch > 0 else 'Unknown'
+    except (ValueError, OverflowError, OSError):
+        return 'Unknown'
+
+
 def queue_text(host, activity=False, fresh=False):
     """Supply a successful REST queue snapshot to the existing file reader."""
     user = credentials(host)['user']
@@ -229,7 +238,8 @@ def queue_text(host, activity=False, fresh=False):
         text = '\n'.join('|'.join([job_id(j), str(number(j.get('array_job_id')) or j['job_id']),
             str(number(j.get('array_task_id'), 0)), '+'.join(j['job_state']), elapsed(j),
             str(max(0, number(j.get('time_limit'))*60-int(elapsed(j)))), j.get('name', ''),
-            j.get('current_working_directory', ''), j.get('state_reason', '')]).replace('\n', ' ') for j in rows)
+            j.get('current_working_directory', ''), j.get('state_reason', ''),
+            queue_timestamp(j.get('submit_time')), queue_timestamp(j.get('start_time'))]).replace('\n', ' ') for j in rows)
     return text
 
 
