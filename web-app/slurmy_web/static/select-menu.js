@@ -22,9 +22,10 @@ window.SlurmySelects=(()=>{
   if(active===control){close();return;}close();sync(control);if(control.button.disabled)return;
   const rect=control.button.getBoundingClientRect(),menu=control.menu;
   const below=innerHeight-rect.bottom-12,above=rect.top-12,up=below<180&&above>below;
-  menu.style.width=`${Math.min(rect.width,innerWidth-16)}px`;menu.style.left=`${Math.max(8,Math.min(rect.left,innerWidth-rect.width-8))}px`;
+  menu.style.width='max-content';menu.style.minWidth=`${Math.min(rect.width,innerWidth-16)}px`;menu.style.maxWidth=`${innerWidth-16}px`;menu.style.left=`${Math.max(8,Math.min(rect.left,innerWidth-rect.width-8))}px`;
   menu.style.maxHeight=`${Math.max(80,Math.min(360,up?above:below))}px`;menu.style.top=up?'auto':`${rect.bottom+7}px`;menu.style.bottom=up?`${innerHeight-rect.top+7}px`:'auto';
   active=control;menu.showPopover();control.button.setAttribute('aria-expanded','true');
+  menu.style.left=`${Math.max(8,Math.min(rect.left,innerWidth-menu.getBoundingClientRect().width-8))}px`;
   (menu.querySelector('[aria-selected="true"]:not(:disabled)')||menu.querySelector('button:not(:disabled)'))?.focus();
  }
  function enhance(select){
