@@ -307,3 +307,6 @@ html[data-color-theme] #theme-picker button { box-shadow: none; filter: none; }
 .custom-color-control label { margin: 0; }
 .custom-color-control input[type=color] { width: 100%; }
 .custom-color-value { font: 10px/1.5 ui-monospace,monospace; overflow-wrap: anywhere; color: var(--muted); }
+
+/* Node names are disclosure labels, not primary action buttons. */
+html[data-color-theme] button.cluster-node-toggle { background: transparent; color: var(--ink); box-shadow: none; }

@@ -200,14 +200,21 @@ function clusterTasksForUser(data) {
     return values.some(value => String(value ?? '').toLowerCase().includes(filter));
   }
   function slurmyCell(job) {
-    const result = cell(job.jobpairs == null ? (job.slurmy ? 'Metadata unavailable' : '—') : `${job.jobpairs.toLocaleString()} solver-problem pairs / ${job.batches.toLocaleString()} batches`);
+    const result = cell('');
     result.title = job.metadata_source || '';
-    if (job.jobpairs != null && job.metadata_source === 'private job files') {
+    if (job.jobpairs == null) result.textContent = job.slurmy ? 'Metadata unavailable' : '—';
+    else {
       result.replaceChildren();
-      const a = document.createElement('a');
-      a.href = `/jobs/${encodeURIComponent(job.slurmy_id)}?${new URLSearchParams({host})}`;
-      a.textContent = `${job.jobpairs.toLocaleString()} solver-problem pairs / ${job.batches.toLocaleString()} batches →`;
-      result.append(a);
+      const pairs = document.createElement('div');pairs.className = 'cluster-job-pair-count';
+      pairs.textContent = `${job.jobpairs.toLocaleString()} solver-problem pairs`;
+      const accessible = job.slurmy_id && job.user === status.user;
+      const batches = document.createElement(accessible ? 'a' : 'span');
+      batches.className = 'cluster-job-batch-count';batches.textContent = `${job.batches.toLocaleString()} batches`;
+      if (accessible) {
+        batches.href = `/jobs/${encodeURIComponent(job.slurmy_id)}?${new URLSearchParams({host})}#job-batches`;
+        batches.title = 'Inspect the exact solver-problem pairs in each batch for this job';
+      } else if (job.slurmy_id) batches.title = 'Batch details require an SSH connection as the user who owns this job';
+      result.append(pairs, batches);
     }
     if(job.active_call){const current=document.createElement('a');current.className='cluster-active-call';current.href=`/jobs/${encodeURIComponent(job.slurmy_id)}?${new URLSearchParams({host,call:job.active_call.id})}`;current.textContent=`${job.active_call.solver} — ${job.active_call.problem.split('/').pop()}`;current.title=job.active_call.problem;result.append(current);}
     return result;
@@ -291,7 +298,7 @@ function clusterTasksForUser(data) {
       used.append(meter);
       const name = document.createElement('td');
       const toggle = document.createElement('button');
-      toggle.type = 'button';toggle.className = 'cluster-node-toggle';toggle.textContent = node.name;
+      toggle.type = 'button';toggle.className = 'cluster-node-toggle secondary';toggle.textContent = node.name;
       toggle.setAttribute('aria-expanded', String(expandedNodes.has(node.name)));
       const tasksId = `cluster-node-tasks-${node.name}`;
       toggle.setAttribute('aria-controls', tasksId);

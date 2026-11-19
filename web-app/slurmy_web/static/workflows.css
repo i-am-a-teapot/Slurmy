@@ -595,3 +595,13 @@ details[data-section-state="closing"] > summary::before { transform: rotate(0deg
 .cluster-node-expansion-row:hover { background: transparent; }
 .cluster-node-task-panel { margin: 0; padding: 0; border: 0; }
 .cluster-node-task-panel.collapsed { height: 0; overflow: hidden; }
+
+#cluster-tasks-table { table-layout: fixed; }
+#cluster-tasks-table :is(th,td) { white-space: normal; overflow-wrap: anywhere; }
+#cluster-tasks-table td { padding-inline: 10px; }
+#cluster-tasks-table .cluster-slurmy-label { display: block; margin-top: 5px; color: var(--muted); font-size: 10px; }
+#cluster-tasks-table .cluster-active-call { display: block; margin: 7px 0 0; }
+#cluster-tasks-table .cluster-task-fact strong { white-space: normal; }
+.cluster-job-batch-count { display: inline-block; margin-top: 4px; font-weight: 600; }
+#job-batches { scroll-margin-top: 20px; }
+#cluster-tasks-table .sort-button { max-width: 100%; white-space: normal; text-align: left; }

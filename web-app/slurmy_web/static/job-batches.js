@@ -55,5 +55,8 @@ if(document.body.dataset.page==='job'&&document.querySelector('#job-batches')){
   }catch(error){if(request!==listRequest)return;text('#batch-freshness',`Could not update batches: ${error.message}`);if(!list.querySelector('details'))list.replaceChildren(button('Retry',loadList));}
  }
  panel.addEventListener('toggle',()=>{if(panel.open)loadList();else{++listRequest;clearTimeout(retryTimer);retryTimer=null;}});
+ function openLinkedBatches(){if(location.hash!=='#job-batches')return;panel.open=true;panel.scrollIntoView({behavior:'smooth',block:'start'});}
+ window.addEventListener('hashchange',openLinkedBatches);
+ openLinkedBatches();
  window.SlurmyBatches={refresh:loadList};
 }
