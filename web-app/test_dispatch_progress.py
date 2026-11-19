@@ -51,6 +51,8 @@ class DispatchProgressTests(unittest.TestCase):
     def test_prepare_ignores_old_count_and_refreshes_after_generation(self):
         self.start()
         self.assertEqual(self.jobs()[0]['total'], 0)
+        self.assertEqual(self.jobs()[0]['workflow_name'], 'workflow')
+        self.assertEqual(self.jobs()[0]['state'], 'DISPATCHING')
         self.metadata.write_text(json.dumps(dict(task_count=2858)))
         self.assertEqual(self.jobs()[0]['total'], 2858)
 
@@ -72,6 +74,8 @@ class DispatchProgressTests(unittest.TestCase):
         self.assertEqual(len(jobs), 1)
         self.assertEqual(jobs[0]['id'], 'current-job_1234567890_12')
         self.assertFalse(jobs[0]['provisional'])
+        self.assertEqual(jobs[0]['workflow_name'], 'workflow')
+        self.assertEqual(jobs[0]['state'], 'SUBMITTED')
         self.assertEqual(jobs[0]['total'], 2858)
         self.assertEqual(self.jobs(), jobs)
 

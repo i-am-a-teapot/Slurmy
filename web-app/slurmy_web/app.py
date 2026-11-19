@@ -1286,7 +1286,7 @@ def create_app():
                 id=job_id, name=operation.get('requested_name') or Path(directory).name, state='SUBMITTED',
                 total=int(details.get('task_count', 0) or 0), completed=0,
                 percent=0.0, issues=0, created=time.time(), directory=directory,
-                statuses={}, provisional=False)
+                workflow_name=Path(directory).name, statuses={}, provisional=False)
             operation['job_id'] = job_id
 
     def announce_dispatching(operation, cwd, environment):
@@ -1300,7 +1300,7 @@ def create_app():
                 id=provisional, name=operation.get('requested_name') or Path(directory).name, state='DISPATCHING',
                 total=int(details.get('task_count', 0) or 0), completed=0,
                 percent=0.0, issues=0, created=time.time(), directory=directory,
-                statuses={}, provisional=True)
+                workflow_name=Path(directory).name, statuses={}, provisional=True)
 
     def clear_dispatching(operation):
         provisional = operation.get('provisional_job_id')

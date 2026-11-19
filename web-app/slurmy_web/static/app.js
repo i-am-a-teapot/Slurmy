@@ -354,7 +354,8 @@ function renderJobs(){
  for(const job of filtered.slice(jobsPage*perPage,(jobsPage+1)*perPage)){
   const title=job.provisional?el('div',job.name,'job-link'):link(job.name,'/jobs/'+encodeURIComponent(job.id)+'?'+params({}));title.className='job-link';
   const jobTitle=el('div',undefined,'job-history-title');jobTitle.append(title);
-  if(job.workflow_name){const origin=job.directory?link(job.workflow_name,'/workflow?'+params({directory:job.directory})):el('span',job.workflow_name);origin.className='job-history-workflow';jobTitle.append(origin);}
+  const workflowName=job.workflow_name||job.directory?.split('/').filter(Boolean).pop();
+  if(workflowName){const origin=job.directory?link(workflowName,'/workflow?'+params({directory:job.directory})):el('span',workflowName);origin.className='job-history-workflow';jobTitle.append(origin);}
   const progress=jobStatusBar(job);
   if(job.phase)progress.append(el('small',job.phase,'submission-phase'));
   else if(job.attention)progress.append(el('small',job.attention,'submission-phase'));
