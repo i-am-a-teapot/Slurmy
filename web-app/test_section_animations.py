@@ -24,6 +24,11 @@ const api=context.window.SlurmySections;
 (async()=>{
  const el=section();api.toggle(el,true);
  assert.equal(api.isCollapsed(el),true);assert.equal(el.classList.contains('collapsed'),false);
+ assert.equal(animations[0].options.fill,'both');
+ assert(animations[1].options.duration<animations[0].options.duration);
+ assert.equal(animations[1].options.fill,'both','The earlier fade must hold its last frame until collapse completes');
+ assert.equal(animations[1].frames.at(-1).opacity,0);
+ animations[1].resolve();await Promise.resolve();assert.equal(el.classList.contains('collapsed'),false);
  assert.equal(animations[0].frames[0].height,'260px');assert.equal(animations[0].frames[1].height,'60px');assert.equal(el.style.overflow,'clip');
  animations[0].resolve();await Promise.resolve();assert.equal(el.classList.contains('collapsed'),true);assert.equal(el.style.overflow,'');
  api.toggle(el,false);const opening=animations.at(-2);api.toggle(el,true);opening.resolve();await Promise.resolve();assert.equal(api.isCollapsed(el),true);

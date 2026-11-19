@@ -21,13 +21,14 @@ window.SlurmySections=(()=>{
     section.style.boxSizing='border-box';section.style.overflow='clip';section.dataset.sectionState=collapsed?'closing':'opening';
     const easing=css.getPropertyValue('--section-easing').trim()||'ease';
     const style=css.getPropertyValue('--section-style').trim()||'slide-fade';
-    const animations=[section.animate([{height:from+'px'},{height:to+'px'}],{duration,easing})];
+    const animations=[section.animate([{height:from+'px'},{height:to+'px'}],{duration,easing,fill:'both'})];
     if(style!=='slide')for(const child of section.children){
       if(child===header)continue;
       const frames=collapsed?[{opacity:1},{opacity:0}]:[{opacity:0},{opacity:1}];
       if(style==='slide-fade')frames.forEach((frame,index)=>frame.transform=`translateY(${(collapsed?index:1-index)*4}px)`);
       if(painted?.has(child))Object.assign(frames[0],painted.get(child));
-      animations.push(child.animate(frames,{duration:collapsed?duration*.8:duration,easing}));
+      // Keep faded content hidden until the height animation commits the closed state.
+      animations.push(child.animate(frames,{duration:collapsed?duration*.8:duration,easing,fill:'both'}));
     }
     const state={collapsed,animations,restore};running.set(section,state);
     animations[0].finished.then(()=>{
