@@ -100,6 +100,35 @@ def build_script(value, base=None):
     return existing(words[0],base=base), tuple(words[1:])
 
 
+def validate_solver_command(command, directory, build_on_cluster=False):
+    """Check the executable without executing user-supplied command text."""
+    root = existing(directory, 'directory')
+    words = shlex.split(command or '')
+    while words and (re.fullmatch(r'[A-Za-z_][A-Za-z0-9_]*=.*', words[0]) or words[0] == 'exec'):
+        words.pop(0)
+    if not words:
+        raise ValueError('Enter a solver executable in the command.')
+    executable = words[0]
+    if '{{' in executable or '$' in executable or '`' in executable:
+        raise ValueError('Use an explicit executable path at the start of the solver command.')
+    path = path_at(executable, root)
+    if not path.is_file() and '/' not in executable and not build_on_cluster:
+        system = shutil.which(executable)
+        if system:
+            path = Path(system)
+    if not path.exists():
+        if build_on_cluster and path.is_relative_to(root):
+            return dict(path=str(path), message='Executable will be produced by the cluster build: '+str(path))
+        raise ValueError('Solver executable does not exist: '+str(path))
+    if not path.is_file():
+        raise ValueError('Solver executable is not a file: '+str(path))
+    if not os.access(path, os.X_OK):
+        if build_on_cluster and path.is_relative_to(root):
+            return dict(path=str(path), message='Executable permissions will be checked after the cluster build: '+str(path))
+        raise ValueError('Solver file is not executable: '+str(path))
+    return dict(path=str(path), message='Found executable: '+str(path))
+
+
 def specification(data, destination_override=None, progress=None):
     data = dict(data)
     if not isinstance(data.get('get_computer_info', True), bool):

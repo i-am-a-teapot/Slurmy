@@ -88,11 +88,11 @@ if [[ -f "$SOLVER_STDOUT_LOG" ]]; then
     mv "$SOLVER_STDOUT_LOG" "$SOLVER_LOG"
 fi
 if [[ -f "$work/computer-info.header" ]]; then
-    for log in "$SOLVER_LOG" "$work/$stem.solver-combined.log"; do
-        [[ "$log" == "$SOLVER_LOG" || -f "$log" ]] || continue
-        { cat "$work/computer-info.header"; [[ ! -f "$log" ]] || cat "$log"; } > "$work/solver-with-info"
-        mv "$work/solver-with-info" "$log"
-    done
+    # The host report belongs to the full run, never to raw prover stdout.
+    combined="$work/$stem.solver-combined.log"
+    if [[ ! -f "$combined" && -f "$SOLVER_LOG" ]]; then cp "$SOLVER_LOG" "$combined"; fi
+    { cat "$work/computer-info.header"; [[ ! -f "$combined" ]] || cat "$combined"; } > "$work/solver-with-info"
+    mv "$work/solver-with-info" "$combined"
     rm "$work/computer-info.header"
 fi
 wall=$(( $(date +%s) - started )); user=; system=; memory=; cpu=; max_vm=; cpu_usage=

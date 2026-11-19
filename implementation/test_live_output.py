@@ -52,7 +52,7 @@ class LiveOutputTests(unittest.TestCase):
         job,row,logs=self.run_capture("/bin/bash -c 'printf \"early error\\n\" >&2; sleep 0.8; printf \"late stdout\\n\"; exit 7'",computer_info=True)
         self.assertEqual(row['return_code'],'7')
         header=b'0.00/0.00\t% Computer : test-node\n'
-        self.assertEqual(logs['solver'],header+b'late stdout\n')
+        self.assertEqual(logs['solver'],b'late stdout\n')
         self.assertEqual(logs['solver-stderr'],b'early error\n')
         combined=logs['solver-combined']
         self.assertTrue(combined.startswith(header))

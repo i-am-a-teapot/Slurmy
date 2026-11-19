@@ -30,7 +30,7 @@ exit '''+str(info_exit)+'\n')
             (root/'payload').write_text(output)
             (root/'timed_call.sh').write_text('''#!/bin/bash
 sleep '''+str(delay)+'''
-cp "$JOB_DIR/payload" "${'''+('SOLVER_STDERR_LOG' if stderr else 'SOLVER_LOG')+'''}"
+'''+('[[ -f "$JOB_DIR/info-arguments" ]] || exit 99\n' if computer_info else '')+'''cp "$JOB_DIR/payload" "${'''+('SOLVER_STDERR_LOG' if stderr else 'SOLVER_LOG')+'''}"
 touch "$SOLVER_LOG" "$SOLVER_STDERR_LOG"
 printf 'TIMEOUT=false\\nMEMOUT=false\\nWCTIME=1.01\\nCPUTIME=0.9\\n' > "$VAR_FILE"
 printf 'Child status: '''+str(code)+'''\\n' > "$WATCHER_LOG"
@@ -45,7 +45,10 @@ exit '''+str(code)+'\n')
                 text = archive.extractfile(solver_log).read().decode()
                 self.assertFalse(any(item.name.endswith('computer-info.header') for item in archive.getmembers()))
                 if computer_info:
-                    self.assertTrue(text.startswith(('0.00/0.00\t' if timestamp else '')+'% Computer : test-node\n'), text)
+                    self.assertNotIn('% Computer : test-node', text)
+                    combined=next(item for item in archive.getmembers() if item.name.endswith('.solver-combined.log'))
+                    full=archive.extractfile(combined).read().decode()
+                    self.assertTrue(full.startswith(('0.00/0.00\t' if timestamp else '')+'% Computer : test-node\n'), full)
                     arguments = (root/'info-arguments').read_text().splitlines()
                     self.assertEqual('--timestamp' in arguments, timestamp)
                     self.assertIn('100MiB', arguments)

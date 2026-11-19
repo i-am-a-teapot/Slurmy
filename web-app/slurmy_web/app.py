@@ -991,6 +991,12 @@ def create_app():
         data['host'] = workflows.alias(request.args.get('host') or data.get('host') or host())
         return jsonify(suggest(data))
 
+    @app.post('/api/validate-solver-command')
+    def validate_solver_command():
+        data = request.get_json() or {}
+        return jsonify(workflows.validate_solver_command(data.get('command'), data.get('directory'),
+                                                         data.get('build_on_cluster') is True))
+
     @app.post('/api/validate-solver-cores')
     def validate_solver_cores():
         from check_threads import check_cores

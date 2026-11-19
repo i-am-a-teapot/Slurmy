@@ -43,7 +43,7 @@ if(document.body.dataset.page==='new'){
  }return node;}
  $('#add-solver-resource').addEventListener('click',()=>{addResource('solver',{mode:'script',artifact:''});visibility();});
  function configurationTitle(card){const name=card.querySelector('[name="solver_name"]').value.trim(),caption=$('h3',card);const toggle=$('.collapse-toggle',caption);caption.textContent=name?`${name} Configuration`:'Solver Configuration';if(toggle){toggle.setAttribute('aria-label',`${card.classList.contains('collapsed')?'Expand':'Collapse'} ${caption.textContent}`);caption.prepend(toggle);}}
- function fill(node,values){for(const [name,value] of Object.entries(values||{})){const field=node.querySelector(`[name="${name}"]`);if(field){if(name==='cores')setCoreRequest(field,value??'1');else field.value=name.startsWith('omit_')?String(value||false).toLowerCase():(value??'');field.refreshShell?.();}}if(node.matches('.configuration')){configurationTitle(node);updateSolverStatus(node);queueMicrotask(()=>checkThreads(node.querySelector('[name="threads_per_core"]')));}}
+ function fill(node,values){for(const [name,value] of Object.entries(values||{})){const field=node.querySelector(`[name="${name}"]`);if(field){if(name==='cores')setCoreRequest(field,value??'1');else field.value=name.startsWith('omit_')?String(value||false).toLowerCase():(value??'');field.refreshShell?.();}}if(node.matches('.configuration')){configurationTitle(node);updateSolverStatus(node);queueMicrotask(()=>validateSolverCommand(node));queueMicrotask(()=>checkThreads(node.querySelector('[name="threads_per_core"]')));}}
  for(const name of ['name','partition','account','reservation','batch_size','max_outstanding','pair_order','mode','jobpairs','configurations_file','limiter_mode','limiter_file','limiter']){const field=form.querySelector(`[name="${name}"]`);if(field&&initial[name]!==undefined)field.value=initial[name];}
  $('[name="get_computer_info"]').checked=initial.get_computer_info!==false;
  const accountField=$('#slurm-account-field'),accountSelect=form.querySelector('[name="account"]'),accountLoading=$('#slurm-account-loading'),accountStatus=$('#slurm-account-status'),accountRetry=$('#slurm-account-retry');
@@ -330,7 +330,8 @@ if(document.body.dataset.page==='new'){
   const pathReady=name=>{const input=card.querySelector(`[name="${name}"]`);return input.value.trim()&&input.dataset.validated===input.value;};
   const root=value('solver_directory');
   const runtimeReady=root.startsWith('/')&&!root.includes('/path/to/')&&pathReady('solver_directory')&&
-   value('command')&&value('command')!==card.querySelector('[name="command"]').placeholder;
+   value('command')&&value('command')!==card.querySelector('[name="command"]').placeholder&&
+   card.querySelector('[name="command"]').dataset.commandValidated===solverCommandKey(card);
   const buildReady=!buildSelected||((!value('build_source')||pathReady('build_source'))&&pathReady('build_script'));
   const positive=name=>{const input=card.querySelector(`[name="${name}"]`);return input.value.trim()!==''&&input.validity.valid&&Number(input.value)>0;};
   const limitsReady=card.querySelector('[name="threads_per_core"]').dataset.threadValid==='true'&&['wc_limit','cpu_limit'].every(name=>/^(0|[1-9][0-9]*)$/.test(value(name)))&&positive('threads_per_core')&&positive('cores')&&card.querySelector('[name="cores"]').dataset.coreValid==='true'&&
@@ -347,6 +348,34 @@ if(document.body.dataset.page==='new'){
  }
  form.addEventListener('input',event=>{const card=event.target.closest('.configuration');if(card){if(event.target.name==='solver_name')configurationTitle(card);updateSolverStatus(card);}});
  form.addEventListener('change',event=>{const card=event.target.closest('.configuration');if(card)updateSolverStatus(card);});
+ const solverCommandTimers=new WeakMap();
+ function solverCommandData(card){return {command:card.querySelector('[name="command"]').value,directory:card.querySelector('[name="solver_directory"]').value,build_on_cluster:card.querySelector('[name="build_mode"]').value==='script'};}
+ function solverCommandKey(card){return JSON.stringify(solverCommandData(card));}
+ async function validateSolverCommand(card){
+  clearTimeout(solverCommandTimers.get(card));
+  const input=card.querySelector('[name="command"]'),status=card.querySelector('.command-validation'),key=solverCommandKey(card),data=solverCommandData(card);
+  if(!data.command.trim()||!data.directory.trim())return false;
+  if(input.dataset.commandValidated===key)return true;
+  status.className='command-validation validation';status.textContent='Checking solver executable…';
+  try{
+   const result=await api('/api/validate-solver-command',data);
+   if(key!==solverCommandKey(card))return false;
+   input.dataset.commandValidated=key;status.className='command-validation validation valid';status.textContent=result.message;updateSolverStatus(card);return true;
+  }catch(error){
+   if(key!==solverCommandKey(card))return false;
+   delete input.dataset.commandValidated;status.className='command-validation validation invalid';status.textContent=error.message;updateSolverStatus(card);return false;
+  }
+ }
+ function queueSolverCommand(event){
+  if(!['command','solver_directory','build_mode'].includes(event.target.name))return;
+  const card=event.target.closest('.configuration');if(!card)return;
+  delete card.querySelector('[name="command"]').dataset.commandValidated;
+  const status=card.querySelector('.command-validation');status.textContent='';
+  clearTimeout(solverCommandTimers.get(card));solverCommandTimers.set(card,setTimeout(()=>validateSolverCommand(card),350));
+ }
+ form.addEventListener('input',queueSolverCommand);form.addEventListener('change',queueSolverCommand);
+ form.addEventListener('focusout',event=>{if(['command','solver_directory'].includes(event.target.name)){const card=event.target.closest('.configuration');if(card)validateSolverCommand(card);}});
+ for(const card of document.querySelectorAll('.configuration'))queueMicrotask(()=>validateSolverCommand(card));
  async function validatePath(input){
   const status=$('.validation',input.closest('label'));if(!input.value.trim()){if(status)status.textContent='';const card=input.closest('.configuration');if(card)updateSolverStatus(card);return false;}
   const original=input.value;if(status){status.className='validation';status.textContent='Checking…';}
@@ -495,6 +524,7 @@ if(document.body.dataset.page==='new'){
   for(const input of inputs){if(!input.value.trim()&&!input.dataset.optional){const details=input.closest('.solver-card-section,.problem-card-section,.limiter-card-section');if(details)details.open=true;input.focus();throw new Error('Fill in each visible setting before continuing.');}if(!input.checkValidity()){const details=input.closest('.solver-card-section,.problem-card-section,.limiter-card-section');if(details)details.open=true;input.reportValidity();throw new Error('Please correct the highlighted field.');}}
   for(const input of inputs.filter(n=>n.dataset.path&&n.value.trim())){if(input.dataset.validated!==input.value&&!await validatePath(input)){const details=input.closest('.solver-card-section,.problem-card-section,.limiter-card-section');if(details)details.open=true;throw new Error('Correct the path highlighted above.');}}
   if(step===1&&rootValue('mode')==='interactive')for(const card of document.querySelectorAll('.configuration')){
+   if(!await validateSolverCommand(card))throw new Error('Correct the solver executable highlighted under Command.');
    updateSolverStatus(card);const section=card.querySelector('.solver-card-section[data-state="invalid"]');if(section&&!section.hidden){section.open=true;section.querySelector('input,textarea,select')?.focus();throw new Error('Complete the highlighted solver section before continuing.');}
   }
   if(step===1&&rootValue('mode')==='interactive'&&[...document.querySelectorAll('#configurations .configuration')].some(card=>card.dataset.state==='invalid'))throw new Error('Give each solver configuration a distinct name.');

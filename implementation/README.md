@@ -112,7 +112,8 @@ output from a file omitted by the limiter configuration.
 
 By default, the bundled `tools/GetComputerInfo` runs on the compute node before
 every solver-problem pair. Its hardware, operating-system and configured-limit
-report appears at the start of solver stdout as TPTP comments. Report lines use
+report appears at the start of the full runsolver output as TPTP comments,
+without being added to the prover's raw stdout. Report lines use
 `0.00/0.00` timestamps only when the limiter invocation contains `--timestamp`.
 Collection runs outside solver timing and limits, with a 45-second timeout;
 failure is recorded in the controller log and does not prevent the solver from
@@ -444,7 +445,8 @@ The output inspector defaults to **Runsolver output (stdout + stderr)** when tha
 recording exists; **Solver stdout (raw)** and **Solver stderr** remain separate
 choices. This exposes the native per-line timestamps for existing saved runs too.
 Those copies retain the solver's own formatting rather than runsolver timestamps;
-the independently collected computer-information header is prepended as before.
+the independently collected computer-information header is prepended only to
+the combined full-run recording.
 Two small `tee` processes drain the streams during execution and are awaited before
 publishing results. Timestamps reflect when runsolver receives output; Slurmy
 cannot force a solver to flush its own internal buffers or recover a total order
@@ -585,3 +587,9 @@ available account preference or select an available replacement for the importin
 user, updating both JSON and Makefile. Membership discovery is required during
 GUI import, so an unavailable cluster produces a retryable import error instead
 of silently keeping an unauthorized account.
+
+In the workflow editor, the solver command is checked locally without executing
+it. Missing files and missing execute permission are shown under **Command** and
+must be corrected before continuing. A configured cluster build may produce its
+expected executable later; that case is identified explicitly instead of being
+rejected as a missing prebuilt solver.
