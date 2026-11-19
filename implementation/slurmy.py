@@ -380,16 +380,12 @@ def generate(jobpairs: Path, building: Path, limiter_file: Path,
     # Keep each allocation's core count and sharing policy homogeneous. Pairs
     # still run sequentially; compatible requests fill batches even when input
     # order interleaves configurations, rather than making one batch per pair.
-    configuration_fields = ('solver', 'solver_root', 'command', 'wc_limit', 'cpu_limit',
-                            'mem_limit', 'cores', 'threads_per_core', 'cpus',
-                            'exclusive_cpu', 'exclusive_node', *LIMIT_OMISSION_FIELDS)
     allocation_fields = ('cores', 'threads_per_core', 'cpus', 'exclusive_cpu', 'exclusive_node')
-    batch_fields = configuration_fields if pair_order == 'solver-major' else allocation_fields
     open_batches = {}
     for task in tasks:
-        # Configuration identity, not adjacency: a hand-reordered CSV can
-        # interleave provers without producing a new batch at every transition.
-        key = tuple(task[field] for field in batch_fields)
+        # Solver identity and per-pair limits do not change the allocation:
+        # pairs run sequentially, each with its own command and limiter settings.
+        key = tuple(task[field] for field in allocation_fields)
         batch_id = open_batches.get(key)
         if batch_id is None or len(batches[batch_id]) >= batch_size:
             batch_id = len(batches)
@@ -409,7 +405,7 @@ def generate(jobpairs: Path, building: Path, limiter_file: Path,
         metadata = {"slurmy_version": VERSION, "workflow_directory": str(jobpairs.parent), "task_count": len(tasks), "batch_count": len(batches),
                     "batch_size": batch_size, "pair_order": pair_order, "local_calls_materialized": materialize_calls, "result_columns": RESULT_COLUMNS,
                     "planned_batch_tasks": [[t["task_id"] for t in batch] for batch in batches],
-                    "batch_policy": "one solver-problem pair at a time per batch; batches have matching core and sharing requests; solver-major collects matching configurations across interleaved input rows",
+                    "batch_policy": "one solver-problem pair at a time per batch; all orderings group by matching core, socket, thread and sharing requests; batches may mix solver configurations",
                     "get_computer_info": get_computer_info,
                     "shared_axiom_root": shared_axioms,
                     "buffers": {"per_call_seconds": 80 if get_computer_info else 30, "per_call_memory_mib": 128, "batch_seconds": 60}}
@@ -613,7 +609,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--batch-size", type=int, default=1, help="maximum solver-problem pairs owned by one SLURM array task; solver-problem pairs run sequentially (default: 1)")
     parser.add_argument("--max-outstanding", type=int, default=50, help="maximum pending/running SLURM tasks from one job (default: 50)")
     parser.add_argument('--pair-order', choices=PAIR_ORDERS,
-                        help='declared input ordering; solver-major collects matching configurations into separate batches, including interleaved rows')
+                        help='declared input ordering; all orderings pack batches by matching SLURM allocation settings, allowing mixed solvers')
     args = parser.parse_args(argv)
     def report(kind,label,completed,total):
         print(f'Preparation progress: {label}'+(f': {completed}/{total}' if total else ''),flush=True)

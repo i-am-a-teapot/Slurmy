@@ -150,15 +150,22 @@ batches can run concurrently across nodes. A batch contains matching core counts
 and sharing/isolation requests, so a shared solver never inherits a dedicated
 solver's socket or node allocation. Interleaved compatible requests are packed
 together up to the batch size; dedicated requests do not create one batch per pair.
-With `PAIR_ORDER := solver-major`, each configuration has its own open batch:
-Slurmy collects its next N matching rows even when other configurations appear
-between them in `jobpairs.csv`. For example, A1, B1, A2, B2 with batch size 2
-becomes [A1, A2] and [B1, B2]. Rows retain their order within each configuration,
-and every row belongs to exactly one batch. Configuration identity includes the
-solver name, resource directory, command, per-pair limits, allocation settings,
-and unlimited-limit argument omission settings; the problem is excluded.
-Problem-major and random ordering continue to group by allocation settings,
-allowing different configurations to share a sequential batch.
+All ordering modes group by the same SLURM allocation settings: physical cores,
+threads per core, requested socket count, and dedicated socket/node settings.
+Solver name, resource directory, command, per-pair limits, and limit-argument
+omission settings do not prevent pairs from sharing a batch. Each pair retains
+its own command and limits. Partition and reservation apply to the whole job.
+
+Slurmy scans `jobpairs.csv` in its saved order and fills an open batch for each
+allocation type, collecting compatible rows even when incompatible rows appear
+between them. For example, A1, B1, A2, B2 with matching allocation settings and
+batch size 2 becomes [A1, B1] and [A2, B2]. With different allocation settings for
+A and B, it becomes [A1, A2] and [B1, B2]. Every row belongs to exactly one batch,
+and rows retain their order within each allocation type. Solver-major ordering
+still tends to keep a solver's pairs together, but its final partial batch can
+be filled by another compatible solver. Ordering controls which compatible rows
+fill batches first; it does not introduce extra configuration boundaries.
+
 For a dispatched job, expand **Batches** on its job page, then expand a batch to
 see its solver-problem pairs in execution order, statuses, and output links. The
 inspector uses saved membership rather than dividing pair IDs by the batch size;
@@ -475,7 +482,7 @@ Picker addresses navigate on Enter or blur.
 
 The submitted-task window defaults to 50. The unified batch suggestion is the
 larger of the conservative half-capacity size and the smallest size that fits all
-allocation/configuration groups into the currently available submission window.
+allocation groups into the currently available submission window.
 The capacity estimate is `max(1, floor(hardware parallelism / 2))`, then capped
 by the workflow submission window and 50; the starting size is the pair count
 divided by that assumed parallelism, rounded up. The factor of two allows for

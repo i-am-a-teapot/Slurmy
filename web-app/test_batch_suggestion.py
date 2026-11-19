@@ -106,24 +106,26 @@ class BatchSuggestionTests(unittest.TestCase):
 
     def test_submission_fit_uses_real_grouping_instead_of_total_pairs_division(self):
         configurations=[config(1,solver_name=name,command='./solver {{problem}}',wc_limit=1,cpu_limit=1,mem_limit='1GiB') for name in ['A','B']]
-        # A size of 39 creates 26+26=52 groups; 40 is needed for 25+25=50.
+        # Both solvers share one allocation group: ceil(2000/39)=52; size 40 fits 50.
         plan=batch.submission_fit(configurations,[1000,1000],39,'solver-major',100,self.nodes)
         self.assertEqual(plan['estimated_batches'],52)
         self.assertEqual(plan['submission_budget'],50)
         self.assertEqual(plan['recommended_batch_size'],40)
         self.assertEqual(plan['recommended_batches'],50)
-        packed=batch.submission_fit(configurations,[1000,1000],41,'problem-major',100,self.nodes)
-        self.assertEqual(packed['estimated_batches'],49)
+        for order in ('solver-major','problem-major','random'):
+            packed=batch.submission_fit(configurations,[1000,1000],41,order,100,self.nodes)
+            self.assertEqual(packed['estimated_batches'],49)
+            self.assertEqual(packed['group_pair_counts'],[2000])
 
-    def test_zero_limits_are_not_grouped_with_small_finite_limits(self):
+    def test_zero_and_finite_pair_limits_share_the_same_allocation_group(self):
         base=config(1,solver_name='Same solver',command='./solver {{problem}}',wc_limit=1,cpu_limit=1,mem_limit='1MiB')
         for field in ('wc_limit','cpu_limit','mem_limit'):
             configurations=[base,{**base,field:0}]
             plan=batch.submission_fit(configurations,[1,1],100,'solver-major',32,self.nodes)
-            self.assertEqual(plan['estimated_batches'],2,field)
+            self.assertEqual(plan['estimated_batches'],1,field)
 
     def test_submission_fit_respects_window_and_impossible_number_of_configurations(self):
-        configurations=[config(1,solver_name=str(index),command='./solver {{problem}}') for index in range(51)]
+        configurations=[config(index+1,solver_name=str(index),command='./solver {{problem}}') for index in range(51)]
         plan=batch.submission_fit(configurations,[1]*51,100,'solver-major',100,self.nodes)
         self.assertEqual(plan['minimum_batches'],51)
         self.assertIsNone(plan['recommended_batch_size'])
@@ -134,6 +136,13 @@ class BatchSuggestionTests(unittest.TestCase):
     def test_dedicated_batches_still_pack_sequential_pairs(self):
         plan=batch.submission_fit([config(1,exclusive_node='true')],[100],25,'solver-major',32,self.nodes)
         self.assertEqual(plan['estimated_batches'],4)
+
+    def test_many_solvers_with_matching_allocations_can_fit_the_submission_window(self):
+        configurations=[config(1,solver_name=str(index)) for index in range(51)]
+        plan=batch.submission_fit(configurations,[1]*51,1,'solver-major',50,self.nodes)
+        self.assertEqual(plan['minimum_batches'],1)
+        self.assertEqual(plan['recommended_batch_size'],2)
+        self.assertEqual(plan['recommended_batches'],26)
 
     def test_existing_account_tasks_reduce_available_slots_and_full_queue_has_no_immediate_fit(self):
         plan=batch.submission_fit([config(1)],[1000],10,'problem-major',32,self.nodes,active_tasks=40)

@@ -143,9 +143,6 @@ def suggest(data):
 def submission_fit(configurations, counts, batch_size, pair_order, maximum_outstanding, nodes, active_tasks=None):
     """Count the same homogeneous batches the core planner creates."""
     from collections import Counter
-    from pathlib import Path
-    import shlex
-    from slurmy import memory_bytes
     groups = Counter()
     for configuration, count in zip(configurations, counts):
         core_text = str(configuration.get('cores') or '1')
@@ -160,15 +157,7 @@ def submission_fit(configurations, counts, batch_size, pair_order, maximum_outst
         cpus = str(configuration.get('cpus') or 'auto')
         allocation = (cores, int(configuration.get('threads_per_core') or 1),
                       0 if cpus.lower() == 'auto' else int(cpus), dedicated_cpu, dedicated_node)
-        key = allocation
-        if pair_order == 'solver-major':
-            command = configuration.get('command') or ''
-            key += (configuration.get('solver_name') or (Path(shlex.split(command)[0]).name if command else ''),
-                    configuration.get('solver_directory', ''), command,
-                    int(configuration.get('wc_limit', 1)), int(configuration.get('cpu_limit', 1)),
-                    memory_bytes(str(configuration.get('mem_limit', '1MiB'))),
-                    *(boolean(str(configuration.get(field) or ''), field) for field in ('omit_cpu_limit','omit_wc_limit','omit_mem_limit')))
-        groups[key] += count
+        groups[allocation] += count
     size = positive(str(batch_size), 'solver-problem pairs per batch')
     free = max(0, 50-active_tasks) if active_tasks is not None else 50
     budget = min(50, free, positive(str(maximum_outstanding), 'maximum submitted SLURM tasks'))

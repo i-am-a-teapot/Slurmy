@@ -43,7 +43,7 @@ class SequentialBatchTests(unittest.TestCase):
                 self.assertEqual(metadata['planned_batch_tasks'][0],list(range(100)))
 
     def test_interleaved_sharing_modes_are_grouped_without_spreading_exclusivity(self):
-        for order in ('problem-major', 'random', None):
+        for order in ('solver-major', 'problem-major', 'random', None):
             with self.subTest(order=order), tempfile.TemporaryDirectory() as folder:
                 assets = self.prepare(Path(folder), [(False,False), (True,False), (False,True)]*2,
                                       100, pair_order=order)
@@ -65,12 +65,12 @@ class SequentialBatchTests(unittest.TestCase):
                 self.assertIn(f'MAX_CORES={cores}',plan)
                 self.assertIn(f'EXCLUSIVE_CPU={socket}',plan)
 
-    def test_solver_major_collects_interleaved_configurations_until_batches_are_full(self):
+    def test_solver_major_packs_interleaved_solvers_by_allocation(self):
         with tempfile.TemporaryDirectory() as folder:
             assets = self.prepare(Path(folder), [(False, False)] * 202,
                                   100, pair_order='solver-major')
             metadata = json.loads((assets/'metadata.json').read_text())
-            expected = [list(range(0,200,2)), list(range(1,200,2)), [200], [201]]
+            expected = [list(range(100)), list(range(100,200)), [200,201]]
             self.assertEqual(metadata['planned_batch_tasks'], expected)
             for index, ids in enumerate(expected):
                 plan = (assets/'plans'/f'batch_{index:06d}.sh').read_text()
@@ -82,9 +82,24 @@ class SequentialBatchTests(unittest.TestCase):
             assets = self.prepare(Path(folder), [(False,False)] * 8, 100,
                                   pair_order='solver-major',core_counts=[1,1,2,2,1,1,2,2])
             metadata = json.loads((assets/'metadata.json').read_text())
-            self.assertEqual(metadata['planned_batch_tasks'], [[0,4],[1,5],[2,6],[3,7]])
+            self.assertEqual(metadata['planned_batch_tasks'], [[0,1,4,5],[2,3,6,7]])
 
-    def test_solver_major_distinguishes_limits_and_commands_with_matching_allocations(self):
+    def test_partial_solver_major_batch_is_filled_by_the_next_compatible_solver(self):
+        with tempfile.TemporaryDirectory() as folder:
+            overrides=[{'solver_name':name} for name in ['A','A','A','B','B','B']]
+            assets=self.prepare(Path(folder),[(False,False)]*6,4,pair_order='solver-major',overrides=overrides)
+            metadata=json.loads((assets/'metadata.json').read_text())
+            self.assertEqual(metadata['planned_batch_tasks'],[[0,1,2,3],[4,5]])
+
+    def test_socket_and_thread_requests_still_require_separate_batches(self):
+        for variant in ({'cpus':1},{'threads_per_core':2}):
+            with self.subTest(variant=variant),tempfile.TemporaryDirectory() as folder:
+                assets=self.prepare(Path(folder),[(False,False)]*4,100,pair_order='solver-major',
+                                    overrides=[{},variant,{},variant])
+                metadata=json.loads((assets/'metadata.json').read_text())
+                self.assertEqual(metadata['planned_batch_tasks'],[[0,2],[1,3]])
+
+    def test_solver_major_mixes_commands_and_limits_but_preserves_each_pair(self):
         for variant in ({'cpu_limit': 5}, {'wc_limit': 20}, {'mem_limit': '200MiB'},
                         {'command': './solver --strategy=other {{problem}}'}, {'omit_cpu_limit': 'true'}):
             with self.subTest(variant=variant), tempfile.TemporaryDirectory() as folder:
@@ -92,7 +107,22 @@ class SequentialBatchTests(unittest.TestCase):
                 assets = self.prepare(Path(folder), [(False,False)] * 6, 2,
                                       pair_order='solver-major',overrides=overrides)
                 metadata = json.loads((assets/'metadata.json').read_text())
-                self.assertEqual(metadata['planned_batch_tasks'], [[0,2],[1,3],[4],[5]])
+                self.assertEqual(metadata['planned_batch_tasks'], [[0,1],[2,3],[4,5]])
+                tasks=[json.loads(line) for line in (assets/'manifest.jsonl').read_text().splitlines()]
+                for index, task in enumerate(tasks):
+                    for field,value in variant.items():
+                        expected = (value if index%2 else {'cpu_limit':3,'wc_limit':6,'mem_limit':'100MiB',
+                                    'command':'./solver {{problem}}','omit_cpu_limit':'false'}[field])
+                        if field=='mem_limit':
+                            from slurmy import memory_bytes
+                            expected=memory_bytes(expected)
+                        elif field=='omit_cpu_limit': expected=expected=='true'
+                        self.assertEqual(task[field],expected)
+                # Commands and per-pair limits still live in separate scripts/configs.
+                for task in tasks:
+                    config=(assets/'calls'/str(task['task_id'])/'config.sh').read_text()
+                    self.assertIn(f"CPU_LIMIT={task['cpu_limit']}\n",config)
+                    self.assertIn(f"WC_LIMIT={task['wc_limit']}\n",config)
 
     def test_worker_keeps_solver_affinity_limit_with_socket_or_node_isolation(self):
         if not hasattr(os, 'sched_getaffinity') or not shutil.which('taskset'):
@@ -116,15 +146,18 @@ class SequentialBatchTests(unittest.TestCase):
                 self.assertEqual((root/'affinity.txt').read_text().splitlines(),['1','1'])
 
     def test_remote_submission_preserves_sequential_plan_and_exclusive_allocation(self):
-        cases=[(flags,(6,3,'100MiB'),'UNLIMITED') for flags in ([(False,False)]*2,[(True,False)]*2,[(False,True)]*2)]
-        cases += [([(False,False)]*2,limits,maximum) for limits,maximum in [
+        cases=[(flags,(6,3,'100MiB'),'UNLIMITED',None) for flags in ([(False,False)]*2,[(True,False)]*2,[(False,True)]*2)]
+        cases += [([(False,False)]*2,limits,maximum,None) for limits,maximum in [
             ((0,0,'0'),'UNLIMITED'), ((0,3,'100MiB'),'6:00:00'),
             ((0,0,'0'),'2-03:04:05'), ((6,0,'0'),'6:00:00')]]
-        for flags,limits,maximum in cases:
-            with self.subTest(flags=flags,limits=limits,maximum=maximum), tempfile.TemporaryDirectory() as folder:
+        cases += [([(False,False)]*2,(6,3,'100MiB'),'UNLIMITED',overrides) for overrides in [
+            [{'wc_limit':3,'cpu_limit':1},{'wc_limit':121,'cpu_limit':8,'mem_limit':'200MiB'}],
+            [{'wc_limit':0,'mem_limit':'0'},{'wc_limit':121,'mem_limit':'200MiB'}]]]
+        for flags,limits,maximum,overrides in cases:
+            with self.subTest(flags=flags,limits=limits,maximum=maximum,overrides=overrides), tempfile.TemporaryDirectory() as folder:
                 root=Path(folder)
                 source=root/'workflow';source.mkdir()
-                assets=self.prepare(source,flags,100,limits=limits)
+                assets=self.prepare(source,flags,100,limits=limits,pair_order='solver-major',overrides=overrides)
                 home=root/'home'
                 job=home/'slurmy/jobs/test-job'
                 shutil.copytree(assets,job)
@@ -159,10 +192,14 @@ fi
                 self.assertEqual(any(o.startswith('--cores-per-socket=') for o in options),any(socket for socket,_ in flags))
                 plan=job/'batches/batch_000000.sh'
                 output=subprocess.check_output(['bash','-c','source "$1"; printf "%s %s %s" "${#TASK_IDS[@]}" "$PARALLEL" "$MEMORY_MIB"','test',str(plan)],text=True)
-                self.assertEqual(output,'2 1 '+('16000' if limits[2]=='0' else '228'))
-                expected_time=4 if limits[0] else 10080
+                from slurmy import memory_bytes
+                pair_memory=[memory_bytes(item.get('mem_limit',limits[2])) for item in (overrides or [{},{}])]
+                expected_memory=16000 if 0 in pair_memory else max(pair_memory)//2**20+128
+                self.assertEqual(output,'2 1 '+str(expected_memory))
+                pair_wall=[item.get('wc_limit',limits[0]) for item in (overrides or [{},{}])]
+                expected_time=(60+sum(value+80 for value in pair_wall)+59)//60 if all(pair_wall) else 10080
                 self.assertIn('--time='+str(expected_time),options)
-                self.assertIn('--mem='+('16000M' if limits[2]=='0' else '228M'),options)
+                self.assertIn('--mem='+str(expected_memory)+'M',options)
                 self.assertEqual(len(list((job/'batches').glob('batch_*.sh'))),1)
 
 

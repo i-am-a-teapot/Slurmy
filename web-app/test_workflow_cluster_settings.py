@@ -102,9 +102,10 @@ class ClusterSettingsTests(unittest.TestCase):
             metadata = json.loads((destination/'submit.sh.files/metadata.json').read_text())
             self.assertEqual(metadata['task_count'], 2858)
             self.assertEqual(metadata['batch_count'], 6)
-            self.assertEqual([len(batch) for batch in metadata['planned_batch_tasks']], [500,500,429,500,500,429])
-            for batch in metadata['planned_batch_tasks']:
-                self.assertEqual(len({rows[index]['solver_name'] for index in batch}), 1)
+            self.assertEqual([len(batch) for batch in metadata['planned_batch_tasks']], [500,500,500,500,500,358])
+            self.assertEqual([len({rows[index]['solver_name'] for index in batch})
+                              for batch in metadata['planned_batch_tasks']],[1,1,2,1,1,1])
+            self.assertEqual(metadata['planned_batch_tasks'][2],list(range(1000,1500)))
             self.assertEqual(sorted(task for batch in metadata['planned_batch_tasks'] for task in batch), list(range(2858)))
 
     def test_thread_validation_checks_nodes_and_reports_errors(self):
