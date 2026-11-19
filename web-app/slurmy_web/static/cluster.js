@@ -153,6 +153,39 @@ function clusterTasksForUser(data) {
     td.textContent = value == null || value === '' ? '—' : String(value);
     return td;
   }
+  function resourceDetails(job, node = null) {
+    const block = document.createElement('div');
+    block.className = 'cluster-task-resources';
+    const metrics = document.createElement('div');
+    metrics.className = 'cluster-task-metrics';
+    const fact = (label, value) => {
+      const item = document.createElement('span');
+      item.className = 'cluster-task-fact';
+      const caption = document.createElement('span');caption.className = 'cluster-task-label';caption.textContent = label;
+      const detail = document.createElement('strong');detail.textContent = value;
+      item.append(caption, detail);metrics.append(item);
+    };
+    const allocated = node ? job.node_cores[node] : job.reserved_cores;
+    const cores = job.solver_cores || job.active_call?.cores;
+    if (job.controller) fact('Role', 'Submission controller');
+    else if (cores) fact('Solver limit', `${cores} physical ${cores === 1 ? 'core' : 'cores'}`);
+    fact('SLURM allocation', allocated == null ? 'Unavailable' : `${allocated} physical ${allocated === 1 ? 'core' : 'cores'}`);
+    block.append(metrics);
+    const isolation = job.solver_isolation || job.active_call?.isolation;
+    const policy = job.controller ? 'No solver-problem pairs run here' :
+      isolation === 'node' ? 'Whole node dedicated' : isolation === 'socket' ? 'Whole CPU sockets dedicated' :
+      isolation === 'shared' ? 'Other tasks may share the node and sockets' : '';
+    if (policy) {const line = document.createElement('div');line.className = 'cluster-task-policy';line.textContent = policy;block.append(line);}
+    for (const description of clusterPlacementDescription(job, node).split('; ')) {
+      const placement = document.createElement('div');placement.className = 'cluster-task-placement';
+      const [socket, cores] = description.split(' · ');
+      const badge = document.createElement('span');badge.className = 'cluster-socket-badge';badge.textContent = socket;
+      placement.append(badge);
+      if (cores) {const ids = document.createElement('span');ids.className = 'cluster-core-ids';ids.textContent = cores;placement.append(ids);}
+      block.append(placement);
+    }
+    return block;
+  }
   function row(values) {
     const tr = document.createElement('tr');
     for (const value of values) tr.append(value instanceof Node ? value : cell(value));
@@ -267,24 +300,26 @@ function clusterTasksForUser(data) {
       const list = document.createElement('div');
       list.className = 'cluster-node-job-list';
       for (const job of onNode) {
-        const item = document.createElement('div');
+        const item = document.createElement('div');item.className = 'cluster-node-task';
+        const identity = document.createElement('div');identity.className = 'cluster-task-identity';
         const title = job.slurmy && job.user === status.user
           ? document.createElement('a') : document.createElement('span');
-        title.textContent = `${job.name} · task ${job.id}`;
+        title.textContent = job.name;title.className = 'cluster-task-name';
         if (title.tagName === 'A') title.href = `/jobs/${encodeURIComponent(job.slurmy_id)}?${new URLSearchParams({host})}`;
-        const allocated = job.node_cores[node.name];
-        item.append(title, document.createTextNode(` — ${job.user}, ${clusterAllocationDescription(job, allocated)}`));
-        const placement = document.createElement('div');
-        placement.textContent = clusterPlacementDescription(job, node.name);
-        item.append(placement);
+        const task = document.createElement('span');task.className = 'cluster-task-id';task.textContent = `Task ${job.id}`;
+        identity.append(title, task);
+        const owner = document.createElement('div');owner.className = 'cluster-task-owner';owner.textContent = `User: ${job.user}`;
+        item.append(identity, owner, resourceDetails(job, node.name));
         if (job.active_call) {
           const call = document.createElement('div');
           call.className = 'cluster-active-call';
           const detail = document.createElement('a');
           detail.href = `/jobs/${encodeURIComponent(job.slurmy_id)}?${new URLSearchParams({host, call: job.active_call.id})}`;
-          detail.textContent = `${job.active_call.solver} — ${job.active_call.problem.split('/').pop()} · solver-problem pair ${job.active_call.id}${job.active_call.batch_id!=null?' · batch '+job.active_call.batch_id:''}`;
+          detail.textContent = `${job.active_call.solver} — ${job.active_call.problem.split('/').pop()}`;
+          const identifiers = document.createElement('div');identifiers.className = 'cluster-pair-identifiers';
+          identifiers.textContent = `Solver-problem pair ${job.active_call.id}${job.active_call.batch_id!=null?' · Batch '+job.active_call.batch_id:''}`;
           detail.title = job.active_call.problem;
-          call.append(detail);
+          call.append(detail, identifiers);
           item.append(call);
         }
         list.append(item);
@@ -320,8 +355,9 @@ function clusterTasksForUser(data) {
       }
       const state = cell(job.state);
       state.title = job.reason || '';
+      const allocation = document.createElement('td');allocation.append(resourceDetails(job));
       jobs.append(row([job.id, name, job.user, state, job.nodelist || job.reason || job.nodes,
-                        `${clusterAllocationDescription(job)} · ${clusterPlacementDescription(job)}`, `${job.elapsed} / ${job.limit}`, slurmyCell(job)]));
+                        allocation, `${job.elapsed} / ${job.limit}`, slurmyCell(job)]));
     }
     if (!jobs.children.length) empty(jobs, 8, 'No matching active SLURM tasks.');
   }

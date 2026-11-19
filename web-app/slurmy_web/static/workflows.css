@@ -568,3 +568,23 @@ details[data-section-state="closing"] > summary::before { transform: rotate(0deg
 .form-grid :is(input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]):not([type="file"]),select:not([multiple])) {
   height: var(--control-height); min-height: var(--control-height); line-height: 20px; padding-block: 9px;
 }
+
+/* Keep task identity, resource limits and placement on deliberate separate rows. */
+.cluster-node-jobs-inline { border-top: 0; padding: 0; }
+.cluster-node-jobs-inline > summary { padding-block: 4px; }
+.cluster-node-job-list { margin: 8px 0 0 18px; }
+.cluster-node-task { display: grid; gap: 8px; padding: 14px 0; }
+.cluster-node-task:first-child { padding-top: 8px; }
+.cluster-task-identity { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 14px; }
+.cluster-task-name { font-weight: 650; overflow-wrap: anywhere; }
+.cluster-task-id,.cluster-task-owner,.cluster-pair-identifiers { color: var(--muted); font-size: 11px; }
+.cluster-task-resources { display: grid; gap: 8px; }
+.cluster-task-metrics { display: flex; flex-wrap: wrap; gap: 8px 24px; }
+.cluster-task-fact { display: grid; gap: 2px; }
+.cluster-task-label { color: var(--muted); font-size: 10px; }
+.cluster-task-fact strong { font-size: 12px; font-weight: 600; white-space: nowrap; }
+.cluster-task-policy { color: var(--muted); font-size: 11px; line-height: 1.5; }
+.cluster-task-placement { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; }
+.cluster-socket-badge { display: inline-block; padding: 3px 9px; border-radius: var(--theme-control-radius,6px); border: 1px solid color-mix(in srgb,var(--green) 45%,var(--line)); background: color-mix(in srgb,var(--green) 12%,transparent); color: var(--green); font-size: 11px; font-weight: 650; }
+.cluster-core-ids { font-size: 11px; color: var(--muted); }
+.cluster-node-task .cluster-active-call { margin: 2px 0 0; display: grid; gap: 4px; overflow-wrap: anywhere; }
