@@ -184,10 +184,11 @@ html[data-color-theme] #theme-picker { box-shadow: 0 18px 70px #0005; }
 /* Shape, typography, glass and motion belong to the theme, not the page. */
 html[data-color-theme] { font-family: var(--theme-font); }
 html[data-color-theme] :is(h1,h2,h3,.brand) { text-shadow: var(--theme-text-shadow); }
-html[data-color-theme] :is(.panel,.stats article,.workflow-management,.workflow-group .experiment-card,.operation,dialog,[role="dialog"],.theme-picker) {
+html[data-color-theme] :is(.panel,.stats article,.workflow-management,.workflow-group .experiment-card,.operation,dialog,[role="dialog"],.theme-picker,.split-menu,.path-ancestors,[role="menu"],[role="listbox"]) {
   background-color: color-mix(in srgb,var(--white) var(--theme-opacity),transparent);
   backdrop-filter: blur(var(--theme-blur));
   border-radius: var(--theme-radius);
+  box-shadow: var(--theme-shadow);
 }
 html[data-color-theme] :is(.form-card,.configuration,.resource,.solver-card-section,.problem-card-section,.limiter-card-section,dialog,.outcome-cube-viewport) { border-radius: var(--theme-radius); }
 html[data-color-theme] :is(button,.button,input,textarea,select,.badge,.callout) { border-radius: var(--theme-control-radius); }
@@ -310,3 +311,7 @@ html[data-color-theme] #theme-picker button { box-shadow: none; filter: none; }
 
 /* Node names are disclosure labels, not primary action buttons. */
 html[data-color-theme] button.cluster-node-toggle { background: transparent; color: var(--ink); box-shadow: none; }
+
+/* Menu items leave the themed glass surface visible beneath them. */
+html[data-color-theme] :is(.split-menu,.path-ancestors) button { background: transparent; color: var(--ink); }
+html[data-color-theme] :is(.split-menu,.path-ancestors) button:hover:not(:disabled) { background: color-mix(in srgb,var(--green) 12%,transparent); }
