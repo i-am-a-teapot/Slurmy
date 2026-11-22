@@ -703,7 +703,13 @@ def create_app():
                         version = Path(collection).name if Path(collection).name.startswith('TPTP-') else 'TPTP-v9.2.1'
                         value = 'tptp://' + version + '/' + str(Path(value[5:]).relative_to(collection))
                 globs.append(value)
-        return jsonify(globs=list(dict.fromkeys(globs)))
+        from problem_selection import names
+        selections = data.get('problem_selections') or []
+        sources = {}
+        for index, glob in enumerate(globs):
+            selection = names(selections[index] if index < len(selections) else '')
+            sources.setdefault((glob, tuple(selection)), selection)
+        return jsonify(globs=[key[0] for key in sources], problem_selections=list(sources.values()))
 
     @app.get('/api/axiom-sources')
     def axiom_sources():
@@ -868,6 +874,34 @@ def create_app():
         content = app.config.get('COLLECTOR', RemoteCollector)(host(), 10).fetch_batch_log(job_id, slurm_id)
         return jsonify(text=content or 'No SLURM log is available for this batch yet.')
 
+    def prepared_plan():
+        from .prepared_batches import snapshot as prepared_snapshot
+        path=directory()
+        with guard:
+            if any(op['scope']==str(path) and op['state']=='running' for op in operations.values()):
+                raise ValueError('A workflow operation is running. Wait for it to finish before inspecting the prepared plan.')
+        return prepared_snapshot(path)
+
+    @app.get('/api/workflow/prepared-batches')
+    def prepared_batches():
+        from .prepared_batches import summaries
+        job,freshness=prepared_plan()
+        page_number,size,_,_=call_page_args()
+        return jsonify(**summaries(job,page_number,size),page=page_number,refresh=freshness)
+
+    @app.get('/api/workflow/prepared-batches/<int:batch_id>')
+    def prepared_batch(batch_id):
+        from .prepared_batches import pairs
+        job,freshness=prepared_plan()
+        page_number,size,_,_=call_page_args()
+        return jsonify(**pairs(job,batch_id,page_number,size),refresh=freshness)
+
+    @app.get('/api/workflow/prepared-batches/download')
+    def download_prepared_batches():
+        from .prepared_batches import csv_rows
+        job,_=prepared_plan()
+        return Response(csv_rows(job),mimetype='text/csv',headers={'Content-Disposition':'attachment; filename="prepared-batches.csv"'})
+
     @app.get('/api/jobs/<job_id>/batches')
     def job_batches(job_id):
         from .batches import batch_summaries, batch_members
@@ -966,6 +1000,7 @@ def create_app():
                 matches = [str(path) for path, _ in expand_axiom_source(pattern, host(), materialize=False)]
             else:
                 pattern, matches = workflows.problem_glob(data.get('value'), materialize=False, host=host())
+                matches=workflows.problem_selection.select(matches,data.get('selection') or '')
             return jsonify(path=pattern, count=len(matches), sample=matches[:5])
         if data.get('kind')=='build-script':
             value, arguments=workflows.build_script(data.get('value'))

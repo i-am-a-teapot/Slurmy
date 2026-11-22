@@ -12,12 +12,23 @@ import subprocess
 import sys
 
 
+def rest_nodes(host, partition):
+    if not slurm_api.enabled(host):return None
+    try:
+        return slurm_api.partition_nodes(host,partition)
+    except RuntimeError:
+        # Topology is read-only. A token/bootstrap outage should not prevent
+        # preparation when the same hardware information is available via SSH.
+        return None
+
+
 def dedicated_core_topology(host, partition):
     for value in (host, partition):
         if not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_.-]*', value):
             raise ValueError('Invalid cluster host or partition.')
-    if slurm_api.enabled(host):
-        rows = {(n['sockets'], n['cores_per_socket']) for n in slurm_api.partition_nodes(host, partition)}
+    nodes=rest_nodes(host,partition)
+    if nodes is not None:
+        rows = {(n['sockets'], n['cores_per_socket']) for n in nodes}
         if len(rows) != 1:
             raise ValueError('Choose a partition with homogeneous socket/core topology.')
         return rows.pop()
@@ -39,8 +50,9 @@ def dedicated_core_topology(host, partition):
 def check_requested(host: str, partition: str, maximum: int) -> int:
     if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]*", partition):
         raise ValueError("Invalid SLURM partition name.")
-    if slurm_api.enabled(host):
-        values = {n['threads_per_core'] for n in slurm_api.partition_nodes(host, partition)}
+    nodes=rest_nodes(host,partition)
+    if nodes is not None:
+        values = {n['threads_per_core'] for n in nodes}
         if len(values) != 1:
             raise ValueError('Partition has mixed threads-per-core topology; choose a homogeneous partition.')
         supported = values.pop()
@@ -75,8 +87,9 @@ def check_cores(host: str, partition: str, requested: int) -> int:
     """Reject a solver-problem pair that cannot fit on any node in the selected partition."""
     if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]*", partition):
         raise ValueError("Invalid SLURM partition name.")
-    if slurm_api.enabled(host):
-        supported = max(n['sockets']*n['cores_per_socket'] for n in slurm_api.partition_nodes(host, partition))
+    nodes=rest_nodes(host,partition)
+    if nodes is not None:
+        supported = max(n['sockets']*n['cores_per_socket'] for n in nodes)
         if requested > supported:
             raise ValueError(f'A solver requests {requested} physical cores, but partition {partition} supports at most {supported}.')
         return supported

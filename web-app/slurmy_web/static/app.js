@@ -166,7 +166,7 @@ async function watchOperation(id){
     if(match&&['prepare and dispatch SLURM job','dispatch prepared SLURM job'].includes(op.label)){announceJob(match[1],op.requested_name);if($('#jobs-body'))renderJobs();const node=link('View submitted job →','/jobs/'+encodeURIComponent(match[1])+'?'+params({}));node.id='submitted-link';$('#operation').append(node);refresh();}
     if(op.scope===host+':'+document.body.dataset.job){jobAction=op.state==='running'?op.label:null;jobActionControls();}
     if(op.state==='running'){lockWorkflowActions(true);operationTimer=setTimeout(()=>watchOperation(id),1500);}
-    else{lockWorkflowActions(false);sessionStorage.removeItem('slurmy-operation');text('#show-operation','View completed operation');if(op.label!=='delete')await refresh(true);}
+    else{lockWorkflowActions(false);if(page==='workflow')window.SlurmyBatches?.refresh();sessionStorage.removeItem('slurmy-operation');text('#show-operation','View completed operation');if(op.label!=='delete')await refresh(true);}
   }catch(error){jobAction=null;jobActionControls();lockWorkflowActions(false);updateOperationLog(error.message);sessionStorage.removeItem('slurmy-operation');}
 }
 $('#dismiss-operation')?.addEventListener('click',()=>{operationHidden=true;if(currentOperationId)sessionStorage.setItem('slurmy-operation-hidden',currentOperationId);operationVisibility();});

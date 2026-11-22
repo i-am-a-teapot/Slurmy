@@ -46,10 +46,10 @@ cd "$JOB_DIR/rootfs/$SOLVER_ROOT_REL"
 # Collect host information outside the solver's measured time and limits.
 # Runsolver truncates solver-data, so prepend this report after it finishes.
 if [[ ${GET_COMPUTER_INFO:-0} == 1 ]]; then
-    info_args=(-p --cpu-limit "$CPU_LIMIT" --wc-limit "$WC_LIMIT" --mem-limit "${MEM_LIMIT_MIB}MiB")
+    info_args=(-p --prefix '% ' --cpu-limit "$CPU_LIMIT" --wc-limit "$WC_LIMIT" --mem-limit "${MEM_LIMIT_MIB}MiB")
     [[ ${COMPUTER_INFO_TIMESTAMP:-0} != 1 ]] || info_args+=(--timestamp)
     setsid timeout --signal=TERM --kill-after=5 45 bash "$JOB_DIR/GetComputerInfo" \
-        "${info_args[@]}" THIS ALL > "$work/computer-info.header" 2>> "$CONTROLLER_LOG" &
+        "${info_args[@]}" THIS Model CPUModel RAMPerCPU OS CPULimit WCLimit MemLimit DateTime > "$work/computer-info.header" 2>> "$CONTROLLER_LOG" &
     active=$!
     info_code=0
     wait "$active" || info_code=$?

@@ -11,7 +11,7 @@ from pathlib import Path
 from slurmy import read_builds
 from . import workflows
 
-FILES = ('workflow.json', 'jobpairs.csv', 'configurations.csv', 'problem-globs.txt', 'axiom-globs.txt',
+FILES = ('workflow.json', 'jobpairs.csv', 'configurations.csv', 'problem-globs.txt', 'problem-selection.json', 'axiom-globs.txt',
          'building.txt', 'resource_limiter_template.txt', 'Makefile')
 SETTINGS = {'GET_COMPUTER_INFO': 'get_computer_info', 'BATCH_SIZE': 'batch_size', 'PAIR_ORDER': 'pair_order',
             'SLURMY_MAX_OUTSTANDING': 'max_outstanding', 'SLURMY_HOST': 'host',
@@ -77,12 +77,17 @@ def replace(directory, name, content, progress=None):
             data=replacement
         elif name == 'jobpairs.csv':
             data.update(mode='jobpairs', jobpairs=str(temporary), configurations=[], configurations_file='', globs=[])
+        elif name == 'problem-selection.json':
+            selections=json.loads(content)
+            if not isinstance(selections,list):raise ValueError('Problem selections must be a JSON list, aligned with problem sources.')
+            data['problem_selections']=selections
         elif name == 'configurations.csv':
             data.update(mode='interactive', configurations=workflows.imported_rows(temporary, True), configurations_file='')
         elif name in {'problem-globs.txt', 'axiom-globs.txt'}:
             patterns = [line.strip() for line in content.splitlines() if line.strip()]
             patterns = [value if value.startswith('tptp://') else str(workflows.path_at(value, directory)) for value in patterns]
             if name == 'problem-globs.txt':
+                if patterns!=data.get('globs'):data['problem_selections']=[]
                 data['globs'] = patterns
             else:
                 data.update(axiom_globs=patterns, axiom_mode='custom' if patterns else 'cluster')

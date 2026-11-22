@@ -44,7 +44,8 @@ def order_jobpairs(rows: list[dict], order: str) -> list[dict]:
         raise SlurmyError(f"solver-problem pair order must be one of: {', '.join(PAIR_ORDERS)}")
     result = list(rows)
     if order == "problem-major":
-        result.sort(key=lambda row: row["problem"])
+        problems = {problem:index for index,problem in enumerate(dict.fromkeys(row["problem"] for row in result))}
+        result.sort(key=lambda row: problems[row["problem"]])
     elif order == "solver-major":
         configurations = {}
         for row in result:

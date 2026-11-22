@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from slurmy_archives import expand_cluster_tptp_many
+import problem_selection
 
 import csv
 import io
@@ -188,7 +189,7 @@ def specification(data, destination_override=None, progress=None):
         if progress:
             progress('phase', 'Checking selected partition’s thread topology', 0, 0)
         check_requested(host, partition, maximum)
-        problems = set()
+        problem_sources = []
         if progress:
             progress('phase', 'Finding selected problems and inspecting archives', 0, 0)
         selected_globs=data.get('globs', [])
@@ -196,10 +197,13 @@ def specification(data, destination_override=None, progress=None):
         for value in selected_globs:
             pattern, matches = ((value,cluster_matches[value]) if isinstance(value,str) and value in cluster_matches else problem_glob(value, progress=progress, host=host))
             patterns.append(pattern)
-            problems.update(matches)
+            problem_sources.append(matches)
+        problems=problem_selection.merge(problem_sources,data.get('problem_selections',[]))
+        if any(problem_selection.names(choice) for choice in data.get('problem_selections',[])):data['_problem_order']=problems
+        else:data.pop('_problem_order',None)
         if not problems:
             raise ValueError('Add at least one problem glob.')
-        rows = [{**row, 'problem': problem} for row in configs for problem in sorted(problems)]
+        rows = [{**row, 'problem': problem} for row in configs for problem in problems]
     else:
         raise ValueError('Choose how to define solver/problem calls.')
     if mode == 'jobpairs':
@@ -318,10 +322,16 @@ def specification(data, destination_override=None, progress=None):
     if configs:
         files['configurations.csv'] = csv_text(configs, tuple(c for c in COLUMNS if c != 'problem'))
         files['problem-globs.txt'] = '\n'.join(patterns) + '\n'
+        selections=data.get('problem_selections') or []
+        selection_flag=''
+        if any(problem_selection.names(choice) for choice in selections):
+            files['problem-selection.json']=json.dumps(selections,indent=2)+'\n'
+            selection_flag=' --problem-selection-file problem-selection.json'
+
         files['Makefile'] += ('\n.PHONY: pairs refresh-problems\npairs: jobpairs.csv\n\n'
                              'jobpairs.csv: configurations.csv problem-globs.txt refresh-problems\n'
                              '\t"$(SLURMY_PYTHON)" "$(REPO_ROOT)/implementation/slurmy-pairs.py" --configurations configurations.csv '
-                             '--problem-globs-file problem-globs.txt --order "$(PAIR_ORDER)" --output $@\n')
+                             '--problem-globs-file problem-globs.txt'+selection_flag+' --order "$(PAIR_ORDER)" --output $@\n')
     files['workflow.json'] = json.dumps({key:value for key,value in data.items() if key!='host'}, indent=2, sort_keys=True) + '\n'
     return destination, files, len(rows)
 
@@ -329,7 +339,7 @@ def specification(data, destination_override=None, progress=None):
 def write_definitions(source, files, destination=None):
     """Publish staged definitions, restoring originals on a failed save or rename."""
     destination = destination or source
-    obsolete = {'configurations.csv', 'problem-globs.txt', 'axiom-globs.txt', 'submit.sh'} - files.keys()
+    obsolete = {'configurations.csv', 'problem-globs.txt', 'axiom-globs.txt', 'problem-selection.json', 'submit.sh'} - files.keys()
     changed = set(files) | obsolete
     if source.is_symlink():
         raise ValueError('Workflow directory must not be a symlink.')
@@ -733,7 +743,7 @@ def decisions(directory, check_paths=True):
                 pair_order=setting('PAIR_ORDER', 'solver-major'),
                 get_computer_info=setting('GET_COMPUTER_INFO', 'true').lower() not in {'false', '0', 'no'},
                 mode=mode, jobpairs=jobpairs, configurations_file='', configurations=configs,
-                globs=globs, axiom_globs=axiom_globs, axiom_mode='custom' if axiom_globs else 'cluster', building_mode='create', building_file='', resources=resources,
+                globs=globs, problem_selections=json.loads((directory/'problem-selection.json').read_text()) if (directory/'problem-selection.json').is_file() else [], axiom_globs=axiom_globs, axiom_mode='custom' if axiom_globs else 'cluster', building_mode='create', building_file='', resources=resources,
                 limiter_mode='inline', limiter_file='', limiter=limiter))
 
 

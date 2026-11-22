@@ -593,3 +593,37 @@ it. Missing files and missing execute permission are shown under **Command** and
 must be corrected before continuing. A configured cluster build may produce its
 expected executable later; that case is identified explicitly instead of being
 rejected as a missing prebuilt solver.
+
+## Inspecting a Preparation Before Dispatch
+
+On a workflow page, choose **Prepare only**, then open **Generated Workflow Files →
+Prepared Batch Plan**. Expand a batch to see its exact solver-problem pair IDs,
+solver configurations and problem filenames in execution order. Page sizes are
+configurable, and **Download batch plan** exports the complete mapping as CSV.
+This reads `submit.sh.files/metadata.json` and `manifest.jsonl` locally, without
+submitting anything or contacting SLURM. Preparing again replaces this local plan;
+submitted jobs retain their own saved plans. Editing the workflow invalidates its
+preparation, so prepare again before inspecting an updated plan.
+
+## Selecting and Ordering Problem Filenames
+
+Each problem source has **Select and order specific filenames (optional)**.
+Enter one filename per line to keep only those files in that order. Names must
+match exactly one file in that source; missing or ambiguous names are errors.
+Leave the list blank to use all matches. This works for local globs, archives and
+cluster TPTP globs. The ordered lists are saved in `workflow.json` and generated
+`problem-selection.json`; the preparation command applies them too. Problem-major
+order follows the selected problem sequence across solvers, while solver-major
+order follows that sequence within each solver. Duplicate problems across sources
+are used once, at their first selected occurrence. Portable workflows preserve the
+selected problems and order.
+
+GetComputerInfo now requests only Model, CPUModel, RAMPerCPU, OS, CPULimit,
+WCLimit, MemLimit and DateTime, using `-p --prefix '% '`. Its computer-name header
+is retained, and `--timestamp` is added only when enabled for the limiter.
+
+Account discovery is advisory: a slow or failed lookup no longer prevents moving
+through the workflow editor. Until verified, the saved account or cluster default
+is retained. Failed REST topology reads fall back to read-only SSH hardware checks;
+submission itself still uses the selected scheduler transport and reports its own
+authentication errors.

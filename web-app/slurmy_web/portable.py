@@ -119,7 +119,7 @@ def export_bundle(directory, host):
             raise ValueError('Unsupported shared problem path.')
         remote_roots.add(root)
     shared_roots = remote_roots if not axioms else set()
-    payload = dict(format=FORMAT, name=directory.name, rows=rows, editor_mode=data['mode'], pair_order=data.get('pair_order') or 'solver-major',
+    payload = dict(problem_order=data.get('_problem_order',[]),format=FORMAT, name=directory.name, rows=rows, editor_mode=data['mode'], pair_order=data.get('pair_order') or 'solver-major',
                    builds=[{k: str(v) if isinstance(v, Path) else v for k, v in asdict(build).items()} for build in builds],
                    limiter=limiter, axioms=axioms, shared_roots=sorted(shared_roots), default_tptp_root=TPTP_DEFAULT_ROOT,
                    settings={key: data.get(key, default) for key, default in
@@ -370,6 +370,12 @@ def import_bundle(stream, name, selected_host=None):
                                         build_policy=build.get('build_policy', 'always'))
                                    for build in resources])
             data = workflows.resource_roles(data)
+        if payload.get('problem_order') and data['mode']=='interactive':
+            order=payload['problem_order']
+            if not isinstance(order,list) or not all(isinstance(path,str) for path in order):raise ValueError('Invalid problem order in workflow archive.')
+            ordered=[local(path.removeprefix('tptp:')) for path in order]
+            if set(ordered)!={row['problem'] for row in normalized}:raise ValueError('Portable problem order does not match its solver-problem pairs.')
+            data.update(globs=[glob.escape(path) for path in ordered],problem_selections=[Path(path).name for path in ordered],_problem_order=ordered)
         data.pop('host',None)
         (staging/'workflow.json').write_text(json.dumps(data, indent=2))
         # mkdir is the atomic name claim; never replace an existing workflow.

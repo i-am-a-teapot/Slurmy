@@ -113,10 +113,11 @@ def suggest(data):
                           workflows.imported_rows(workflows.existing(data.get('configurations_file')), True, False))
         if not isinstance(configurations, list) or not configurations:
             raise ValueError('Add at least one solver configuration.')
-        problems = set()
+        sources = []
         for value in data.get('globs', []):
             _, matches = workflows.problem_glob(value, materialize=False, host=host)
-            problems.update(matches)
+            sources.append(matches)
+        problems = workflows.problem_selection.merge(sources,data.get('problem_selections',[]))
         count = len(configurations) * len(problems)
         group_counts = [len(problems)]*len(configurations)
     else:

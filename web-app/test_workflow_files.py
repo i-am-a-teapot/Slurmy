@@ -116,6 +116,17 @@ class WorkflowFileTests(unittest.TestCase):
         resource=workflows.decisions(self.directory)['resources'][0]
         self.assertEqual(resource['script'],str(recipe));self.assertEqual(resource['build_policy'],'changed')
 
+    def test_problem_filename_selection_is_saved_and_regenerated_consistently(self):
+        later=self.root/'later.p';later.write_text('cnf(b,axiom,q).')
+        data=workflows.decisions(self.directory)
+        data.update(globs=[str(self.root/'*.p')],problem_selections=['later.p\nfirst.p'])
+        workflows.save(data,self.directory)
+        self.assertEqual([Path(row['problem']).name for row in self.rows('jobpairs.csv')],['later.p','first.p'])
+        self.assertIn('--problem-selection-file problem-selection.json',(self.directory/'Makefile').read_text())
+        workflow_files.replace(self.directory,'problem-selection.json','["first.p"]')
+        self.assertEqual([Path(row['problem']).name for row in self.rows('jobpairs.csv')],['first.p'])
+        self.assertEqual(workflows.decisions(self.directory)['problem_selections'],['first.p'])
+
     def test_makefile_settings_update_workflow_and_custom_rules_are_rejected(self):
         body=(self.directory/'Makefile').read_text().replace('BATCH_SIZE := 2','BATCH_SIZE := 7').replace('CPU-amd','CPU-intel')
         workflow_files.replace(self.directory,'Makefile',body)

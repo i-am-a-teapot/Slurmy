@@ -63,10 +63,26 @@ const api=async()=>{if(result instanceof Error)throw result;return result;};
  await loadAccounts();assert.equal(accountSelect.value,'default');assert.equal(accountField.hidden,false);
  initial.account='missing';accountSelect.dataset={};
  await loadAccounts();assert.equal(accountSelect.value,'cpuopt');assert(accountStatus.textContent.includes('unavailable'));
- result=new Error('Disconnected');await loadAccounts();assert.equal(accountsReady,false);assert.equal(accountRetry.hidden,false);assert.equal(accountLoading.textContent,'Disconnected');
+ result=new Error('Disconnected');await loadAccounts();assert.equal(accountsReady,false);assert.equal(accountRetry.hidden,false);assert(accountLoading.textContent.startsWith('Disconnected'));assert(accountLoading.textContent.includes('keep editing'));
 })().catch(error=>{console.error(error);process.exitCode=1});
 """
         result=subprocess.run(['node','-e',program],capture_output=True,text=True)
+        self.assertEqual(result.returncode,0,result.stderr)
+
+    def test_concurrent_account_lookup_does_not_start_or_wait_on_another_ssh(self):
+        accounts._inflight.add('datalab')
+        try:
+            with patch.object(accounts.subprocess,'run') as run,self.assertRaisesRegex(ValueError,'already in progress'):
+                accounts.memberships('datalab')
+            run.assert_not_called()
+        finally:accounts._inflight.discard('datalab')
+
+    @unittest.skipUnless(shutil.which('node'), 'Node is needed for the editor regression check')
+    def test_account_lookup_does_not_block_editing_the_next_step(self):
+        source=(Path(__file__).parent/'slurmy_web/static/builder.js').read_text()
+        function=source[source.index(' async function validSection(){'):source.index(' let navigating=false;')]
+        script="const step=0;const sections=[{querySelectorAll:()=>[]}];\n"+function+"\nvalidSection().catch(error=>{console.error(error);process.exitCode=1});"
+        result=subprocess.run(['node','-e',script],capture_output=True,text=True)
         self.assertEqual(result.returncode,0,result.stderr)
 
     def test_errors_are_not_cached_or_interpreted_as_default_only(self):

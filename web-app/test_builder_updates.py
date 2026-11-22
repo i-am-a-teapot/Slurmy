@@ -38,6 +38,13 @@ class BuilderUpdateTests(unittest.TestCase):
         self.assertEqual(response.status_code,200)
         self.assertEqual(response.json['globs'],[glob,'/tmp/local/*.p'])
 
+    def test_copy_problem_sources_keeps_distinct_filename_selections(self):
+        glob='tptp://TPTP-v10.0.0/Problems/SET/*.p'
+        with patch.object(workflows,'decisions',return_value=dict(globs=[glob,glob,glob],problem_selections=['A.p','B.p','A.p'])):
+            response=self.client.get('/api/problem-sources',query_string=dict(directory=str(self.workflow)))
+        self.assertEqual(response.json['globs'],[glob,glob])
+        self.assertEqual(response.json['problem_selections'],[['A.p'],['B.p']])
+
     def test_cluster_axiom_validation_does_not_convert_uri_to_local_path(self):
         uri='tptp://TPTP-v9.2.1/Axioms/SET*.ax'
         with patch('slurmy_archives.expand_axiom_source',return_value=[(Path('tptp:/share/datasets/TPTP/TPTP-v9.2.1/Axioms/SET001.ax'),Path('SET001.ax'))]) as expand:

@@ -7,6 +7,7 @@ from ssh_transport import connection_options
 
 _cache = {}
 _lock = threading.Lock()
+_inflight = set()
 TTL = 300
 
 
@@ -18,6 +19,10 @@ def memberships(host):
         cached = _cache.get(host)
         if cached and now - cached[0] < TTL:
             return dict(cached[1], cached=True)
+        if host in _inflight:
+            raise ValueError('Account lookup is already in progress. Retry shortly.')
+        _inflight.add(host)
+    try:
         try:
             result = subprocess.run(
                 ['ssh', *connection_options(), '-T', '-o', 'BatchMode=yes', '-o',
@@ -34,8 +39,10 @@ def memberships(host):
         if not accounts:
             raise ValueError('SLURM returned no account associations. Retry or contact your cluster administrator.')
         value = dict(accounts=accounts, preferred=choose(accounts), checked_at=time.time(), cached=False)
-        _cache[host] = (time.monotonic(), value)
+        with _lock:_cache[host] = (time.monotonic(), value)
         return dict(value)
+    finally:
+        with _lock:_inflight.discard(host)
 
 
 def choose(accounts, requested=None):

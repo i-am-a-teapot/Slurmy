@@ -12,6 +12,16 @@ import test_batching
 
 
 class AllCoresTests(unittest.TestCase):
+    def test_rest_auth_failure_falls_back_to_read_only_ssh_topology(self):
+        import check_threads
+        from types import SimpleNamespace
+        with patch('check_threads.slurm_api.enabled',return_value=True),patch('check_threads.slurm_api.partition_nodes',side_effect=RuntimeError('token bootstrap failed')):
+            with patch('check_threads.subprocess.run',return_value=SimpleNamespace(returncode=0,stdout='1\n',stderr='')):
+                self.assertEqual(check_threads.check_requested('datalab','CPU-amd',1),1)
+            with patch('check_threads.subprocess.run',return_value=SimpleNamespace(returncode=0,stdout='2 32\n',stderr='')):
+                self.assertEqual(check_threads.dedicated_core_topology('datalab','CPU-amd'),(2,32))
+                self.assertEqual(check_threads.check_cores('datalab','CPU-amd',64),64)
+
     def test_resolves_socket_and_node_and_rejects_shared_cores(self):
         for socket, node, expected in [(True, False, 32), (True, True, 64), (False, True, None)]:
             with self.subTest(socket=socket,node=node), tempfile.TemporaryDirectory() as folder:

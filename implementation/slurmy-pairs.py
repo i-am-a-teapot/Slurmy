@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import argparse
 import csv
+import json
+import problem_selection
 import os
 from pathlib import Path
 import sys
@@ -14,13 +16,14 @@ from slurmy_archives import expand_problem_pattern, expand_cluster_tptp_many
 
 
 def expand(configurations: list[Path], patterns: list[str], output: Path,
-           order: str = "solver-major") -> int:
-    problems: set[str] = set()
+           order: str = "solver-major", selections=None) -> int:
+    sources = []
     cluster_matches=expand_cluster_tptp_many([p for p in patterns if p.startswith('tptp://')],os.environ.get('SLURMY_HOST','datalab'))
     for pattern in patterns:
         matches = (cluster_matches[pattern]
                    if pattern.startswith('tptp://') else expand_problem_pattern(pattern))
-        problems.update(map(str, matches))
+        sources.append(matches)
+    problems=problem_selection.merge(sources,selections)
     rows = []
     for filename in configurations:
         with filename.open(encoding="utf-8-sig", newline="") as stream:
@@ -33,7 +36,7 @@ def expand(configurations: list[Path], patterns: list[str], output: Path,
                 if None in row or any(not row.get(key, '').strip() for key in required):
                     raise SlurmyError(f"{filename}: malformed configuration row")
                 row['solver_directory'] = str(path_at(row['solver_directory'], filename.resolve().parent))
-                for problem in sorted(problems):
+                for problem in problems:
                     rows.append({**row, "solver_name": row.get("solver_name", ""), "problem": str(problem)})
     if not rows:
         raise SlurmyError("no solver configurations")
@@ -67,6 +70,7 @@ def main() -> int:
     parser.add_argument("--output", type=Path, default=Path("jobpairs.csv"))
     parser.add_argument("--order", choices=PAIR_ORDERS, default="solver-major",
                         help="solver-problem pair order; random is reproducible for unchanged inputs")
+    parser.add_argument('--problem-selection-file',type=Path,help='JSON filename selections, aligned with the problem sources')
     args = parser.parse_args()
     try:
         patterns = [p for group in args.problems for p in group]
@@ -75,7 +79,8 @@ def main() -> int:
                             for line in args.problem_globs_file.read_text().splitlines() if line.strip())
         if not patterns:
             raise SlurmyError("provide --problems or --problem-globs-file")
-        count = expand(args.configurations, patterns, args.output, args.order)
+        selections=json.loads(args.problem_selection_file.read_text()) if args.problem_selection_file else None
+        count = expand(args.configurations, patterns, args.output, args.order,selections)
     except (OSError, ValueError) as exc:
         parser.error(str(exc))
     print(f"Wrote {count} explicit solver-problem pairs to {args.output}")

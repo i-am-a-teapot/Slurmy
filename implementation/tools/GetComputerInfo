@@ -18,6 +18,7 @@
 #   --mem-limit X : memory limit (real number), reported by the MemLimit field. The value is
 #                   in MiB, or in MB (10^6 bytes) if it ends in "MB", e.g. 2456MB
 #                   (the limit options also accept the --name=value form)
+#   --prefix TEXT : set the pretty-print comment prefix (default "% ")
 #   --timestamp   : prefix each output line with a zero time stamp "0.00/0.00<TAB>"
 #   Fields        : Model CPUModel TotalCPUs SpareCPUs RAMPerCPU TotalRAM FreeRAM
 #                   SwapInUse FreeSwap OS CPULimit WCLimit MemLimit DateTime, or ALL
@@ -96,6 +97,7 @@ CPULimit=""
 WCLimit=""
 MemLimit=""
 Prefix=""
+CommentPrefix="% "
 Args=()
 while (( $# > 0 )); do
     case "$1" in
@@ -110,6 +112,11 @@ while (( $# > 0 )); do
                 Usage
             fi
             SetLimit "$1" "$2"
+            shift 2
+            ;;
+        --prefix)
+            (( $# >= 2 )) || { echo 'ERROR: --prefix needs an argument'; Usage; }
+            CommentPrefix="$2"
             shift 2
             ;;
         --timestamp)
@@ -319,7 +326,7 @@ done
 
 #----Print it out
 if (( PrettyPrint )); then
-    printf '%s%% %-8s : %s\n' "$Prefix" "Computer" "$FullName"
+    printf '%s%s%-8s : %s\n' "$Prefix" "$CommentPrefix" "Computer" "$FullName"
 else
     printf '%s%-20s => ' "$Prefix" "$FullName"
 fi
@@ -346,7 +353,7 @@ for Field in "${Fields[@]}"; do
         DateTime)  Value="$DateTime" ;;
     esac
     if (( PrettyPrint )); then
-        printf '%s%% %-8s : %s\n' "$Prefix" "$Label" "$Value"
+        printf '%s%s%-8s : %s\n' "$Prefix" "$CommentPrefix" "$Label" "$Value"
     else
         printf '%s; ' "$Value"
     fi

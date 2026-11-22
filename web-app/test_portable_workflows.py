@@ -46,6 +46,23 @@ class PortableWorkflowTests(unittest.TestCase):
         with patch.object(portable.subprocess,'run',side_effect=remote):
             return portable.export_bundle(self.workflow,'test-host')
 
+    def test_explicit_problem_selection_order_survives_portable_workflow(self):
+        second=self.root/'AAA.p';second.write_text('cnf(b,axiom,q).')
+        data=workflows.decisions(self.workflow)
+        configuration=workflows.imported_rows(self.workflow/'jobpairs.csv',check_paths=False)[0]
+        configuration.pop('problem',None)
+        data.update(mode='interactive',configurations=[configuration],globs=[str(self.root/'*.p')],problem_selections=[self.problem.name+'\n'+second.name])
+        with patch.object(workflows,'check_requested'):
+            workflows.save(data,self.workflow)
+        bundle=self.bundle();self.addCleanup(bundle.close)
+        imported,_=portable.import_bundle(bundle,'ordered')
+        restored=workflows.decisions(imported)
+        self.assertEqual([Path(path).name for path in restored['_problem_order']],[self.problem.name,second.name])
+        with patch.object(workflows,'check_requested'):
+            workflows.save(restored,imported)
+        with (imported/'jobpairs.csv').open() as stream:rows=list(csv.DictReader(stream))
+        self.assertEqual([Path(row['problem']).name for row in rows],[self.problem.name,second.name])
+
     def test_import_resolves_account_for_current_cluster_user(self):
         from slurmy_web import accounts
         for available,expected in [(['default'],'default'),(['other','default'],'other'),(['cpuopt','default'],'cpuopt'),(['research'],'research'),(['alpha','beta','default'],'default')]:

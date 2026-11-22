@@ -116,7 +116,8 @@ print(json.dumps(dict(token=result.stdout.strip().removeprefix('SLURM_JWT='),use
         except (OSError, subprocess.TimeoutExpired) as exc:
             raise RuntimeError('Could not bootstrap SLURM API authentication over SSH.') from exc
         if result.returncode:
-            raise RuntimeError('Could not bootstrap SLURM API authentication over SSH. Check cluster access and scontrol token support.')
+            detail = re.sub(r'SLURM_JWT=\S+|eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+','[token redacted]',result.stderr.strip())[-1200:]
+            raise RuntimeError('Could not bootstrap SLURM API authentication over SSH. Check cluster access and scontrol token support.' + (' '+detail if detail else ''))
         try:
             value = json.loads(result.stdout)
             if not value['token'] or any(c.isspace() for c in value['token']): raise ValueError()
