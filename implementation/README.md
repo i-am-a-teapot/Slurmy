@@ -632,3 +632,42 @@ through the workflow editor. Until verified, the saved account or cluster defaul
 is retained. Failed REST topology reads fall back to read-only SSH hardware checks;
 submission itself still uses the selected scheduler transport and reports its own
 authentication errors.
+
+## Parallel Cluster Builds
+
+Workflow resource builds request one CPU socket’s worth of physical cores from
+the selected partition (currently 32 cores on CPU-amd), with one hardware thread
+per core. This is a core-count allocation, not a dedicated-socket reservation.
+The build job exports `MAKEFLAGS` with `-j` and `CMAKE_BUILD_PARALLEL_LEVEL`, so
+Make and CMake builds can compile in parallel without changing their scripts.
+Other build tools can use `$SLURM_CPUS_PER_TASK` or `$SLURMY_BUILD_CORES` for their
+worker count. Explicit parallelism in a recipe should stay within that allocation.
+Existing build-cache policies still apply. Run **Prepare only** again for an
+already-prepared workflow to regenerate its build launcher with this setting.
+The standalone build driver also supports `--cpus-per-task=socket` with an explicit
+`--sbatch-option=--partition=NAME`; its numeric option remains available.
+
+## Solver Environment Variables
+
+Each solver configuration accepts optional **Environment variables**, for example:
+
+```text
+X=Y Z=3
+Hello = World
+GREETING="Hello World"
+EMPTY=
+```
+
+Assignments may be separated by spaces or newlines, with spaces around `=`.
+Names use letters, digits and underscores and cannot start with a digit. Quote
+values containing whitespace; single and double quotes are supported, and a
+backslash escapes the next character outside single quotes. Empty values are
+allowed. Duplicate names, malformed assignments, control characters and unfinished
+quotes or escapes are errors, shown beneath the field. Values are literal: shell
+expansion and command substitution are never performed on them.
+
+Variables are exported inside the solver process wrapper, so the solver and its
+children receive them without changing other pairs, the resource limiter or build
+jobs. Solver commands can reference them normally, such as `"$GREETING"`. They
+are preserved in `workflow.json`, the optional `environment` CSV column, copied
+configurations and portable workflow bundles. Older CSVs may omit the column.

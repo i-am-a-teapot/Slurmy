@@ -283,9 +283,9 @@ dialog::backdrop { background: #102e2866; }
 .solver-copy-action { margin: 18px 0 4px; align-items: stretch; }
 .solver-copy-action > button { display: inline-flex; align-items: center; justify-content: center; min-height: 42px; line-height: 1.4; }
 .solver-copy-action .muted { margin: 0; }
-#copy-configuration-dialog, #copy-limiter-dialog { width: min(680px, calc(100vw - 32px)); padding: 26px; }
-#copy-configuration-dialog label, #copy-limiter-dialog label { margin-top: 18px; }
-#copy-configuration-dialog select, #copy-limiter-dialog select { width: 100%; }
+#copy-configuration-dialog, #copy-limiter-dialog, #copy-problems-dialog, #copy-axioms-dialog { width: min(680px, calc(100vw - 32px)); padding: 26px; }
+#copy-configuration-dialog label, #copy-limiter-dialog label, #copy-problems-dialog label, #copy-axioms-dialog label { margin-top: 18px; }
+#copy-configuration-dialog select, #copy-limiter-dialog select, #copy-problems-dialog select, #copy-axioms-dialog select { width: 100%; }
 .copy-configuration-preview { white-space: pre-wrap; overflow-wrap: anywhere; border: 1px solid var(--line); border-radius: 6px; padding: 14px; min-height: 65px; }
 .copy-configuration-actions { justify-content: flex-end; }
 #path-browser { height: min(680px, 82vh); overflow: hidden; }
@@ -640,3 +640,6 @@ details[data-section-state="closing"] > summary::before { transform: rotate(0deg
 .problem-filename-selection { margin-bottom: 16px; }
 .problem-filename-selection textarea { width: 100%; }
 .prepared-batch-inspector > summary { gap: 12px; }
+
+.build-parallel-info {margin-bottom:12px;font-size:13px;color:var(--ink)}
+.build-parallel-help .eta-explanation {left:0;right:auto}

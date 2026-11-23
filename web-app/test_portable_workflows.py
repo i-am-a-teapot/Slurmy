@@ -46,6 +46,15 @@ class PortableWorkflowTests(unittest.TestCase):
         with patch.object(portable.subprocess,'run',side_effect=remote):
             return portable.export_bundle(self.workflow,'test-host')
 
+    def test_environment_survives_portable_export_and_configuration_copy(self):
+        rows=workflows.imported_rows(self.workflow/'jobpairs.csv',check_paths=False)
+        rows[0]['environment']='X=Y\nHello = "World with spaces"'
+        (self.workflow/'jobpairs.csv').write_text(workflows.csv_text(rows))
+        bundle=self.bundle();self.addCleanup(bundle.close)
+        imported,_=portable.import_bundle(bundle,'environment-import')
+        self.assertEqual(workflows.imported_rows(imported/'jobpairs.csv',check_paths=False)[0]['environment'],rows[0]['environment'])
+        self.assertEqual(workflows.copyable_solver_configurations(imported)[0]['environment'],rows[0]['environment'])
+
     def test_explicit_problem_selection_order_survives_portable_workflow(self):
         second=self.root/'AAA.p';second.write_text('cnf(b,axiom,q).')
         data=workflows.decisions(self.workflow)

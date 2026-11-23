@@ -102,3 +102,12 @@ const previous=text.value;await change({target:picker});assert.equal(text.value,
 '''
         result=subprocess.run(['node','-e',program],capture_output=True,text=True)
         self.assertEqual(result.returncode,0,result.stderr)
+
+    def test_environment_validation_accepts_literal_values_and_rejects_errors(self):
+        headers={'X-CSRF-Token':'test'}
+        response=self.client.post('/api/validate-solver-environment',json={'environment':'X=Y Z=3\nHello = World'},headers=headers)
+        self.assertEqual(response.status_code,200)
+        self.assertEqual(response.json['count'],3)
+        for value in ['bad-name=x','X=one X=two','X="unfinished']:
+            response=self.client.post('/api/validate-solver-environment',json={'environment':value},headers=headers)
+            self.assertEqual(response.status_code,400)

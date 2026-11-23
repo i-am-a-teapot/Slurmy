@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Prepare an explicit table of solver-problem pairs for SLURM; Python runs locally only."""
 from __future__ import annotations
+import solver_environment
 
 import argparse
 import base64
@@ -24,7 +25,7 @@ from slurmy_archives import expand_axiom_pattern, expand_axiom_source, tptp_coll
 
 VERSION = "1.0.0"
 COLUMNS = ("solver_name", "command", "solver_directory", "problem", "wc_limit", "cpu_limit", "mem_limit", "cores",
-           "threads_per_core", "cpus", "exclusive_cpu", "exclusive_node", "omit_cpu_limit", "omit_wc_limit", "omit_mem_limit")
+           "threads_per_core", "cpus", "exclusive_cpu", "exclusive_node", "omit_cpu_limit", "omit_wc_limit", "omit_mem_limit", "environment")
 RESULT_COLUMNS = ("task_id", "complete", "status", "return_code", "wall_seconds",
                   "cpu_seconds", "user_seconds", "system_seconds", "cpu_usage_percent",
                   "max_virtual_memory_kib", "max_memory_kib", "timed_out", "memory_out",
@@ -97,7 +98,7 @@ def read_pairs(filename: Path, host=None, partition=None) -> list[dict]:
     with filename.open(encoding="utf-8-sig", newline="") as stream:
         reader = csv.DictReader(stream)
         headers = reader.fieldnames or []
-        required = set(COLUMNS) - {"solver_name", "threads_per_core", "exclusive_cpu", "exclusive_node", "omit_cpu_limit", "omit_wc_limit", "omit_mem_limit"}
+        required = set(COLUMNS) - {"solver_name", "threads_per_core", "exclusive_cpu", "exclusive_node", "omit_cpu_limit", "omit_wc_limit", "omit_mem_limit", "environment"}
         if len(headers) != len(set(headers)) or not required <= set(headers) or set(headers) - set(COLUMNS):
             raise SlurmyError(f"{filename}: columns must be {', '.join(COLUMNS)}; threads_per_core and exclusivity columns may be omitted")
         for row in reader:
@@ -148,7 +149,11 @@ def read_pairs(filename: Path, host=None, partition=None) -> list[dict]:
             task["mem_limit"] = memory_bytes(row["mem_limit"].strip())
             for key in ("exclusive_cpu", "exclusive_node", *LIMIT_OMISSION_FIELDS):
                 task[key] = boolean(row.get(key) or "", f"{label}: {key}")
+            try:environment=solver_environment.parse(row.get('environment'))
+            except ValueError as exc:raise SlurmyError(f'{label}: {exc}') from exc
+            if environment:task['environment']=environment
             task["task_key"] = hashlib.sha256(json.dumps(task, sort_keys=True).encode()).hexdigest()[:16]
+            task.setdefault('environment',{})
             tasks.append(task)
     if not tasks:
         raise SlurmyError("jobpairs.csv contains no solver-problem pairs")
@@ -377,7 +382,7 @@ def generate(jobpairs: Path, building: Path, limiter_file: Path,
         values.update(mem_limit=str(math.ceil(task["mem_limit"] / 10**6)),
                       mem_limit_mib=str(math.ceil(task["mem_limit"] / 2**20)),
                       problem=(shlex.quote(task['problem']) if task['remote_problem'] else remote_path(Path(task["problem"]))))
-        task["remote_command"] = render(relocate(omit_unlimited_arguments(task["command"], task), command_paths), values)
+        task["remote_command"] = solver_environment.exports(task["environment"]) + render(relocate(omit_unlimited_arguments(task["command"], task), command_paths), values)
         values["solver_command"] = '/bin/bash "$CALL_DIR/solver.sh"'
         for name in ("watcher_log", "var_file", "solver_log"):
             values[name] = '"${' + name.upper() + '}"'
@@ -562,7 +567,7 @@ def generate(jobpairs: Path, building: Path, limiter_file: Path,
                        + (f'--context {shlex.quote(str(build.source))} ' if build.source else '')
                        + ('--in-place ' if build.source == build.root else '')
                        + f'--output {shlex.quote(str(build.root))} '
-                       + f'--build-policy {build.build_policy} '
+                       + f'--build-policy {build.build_policy} --cpus-per-task=socket '
                        + f'--artifact={shlex.quote(build.artifact or ".slurmy-built")} '
                        + '--sbatch-option="--partition=${SLURMY_PARTITION:?Set SLURMY_PARTITION}" '
                        + '${SLURMY_RESERVATION:+--sbatch-option=--reservation=$SLURMY_RESERVATION} '

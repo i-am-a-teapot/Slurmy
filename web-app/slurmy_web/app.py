@@ -1026,6 +1026,12 @@ def create_app():
         data['host'] = workflows.alias(request.args.get('host') or data.get('host') or host())
         return jsonify(suggest(data))
 
+    @app.post('/api/validate-solver-environment')
+    def validate_solver_environment():
+        from solver_environment import parse
+        values = parse((request.get_json() or {}).get('environment'))
+        return jsonify(count=len(values),message=f'{len(values)} environment variable(s) ready.' if values else 'No additional environment variables.')
+
     @app.post('/api/validate-solver-command')
     def validate_solver_command():
         data = request.get_json() or {}

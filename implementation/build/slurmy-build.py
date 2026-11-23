@@ -8,6 +8,7 @@ from pathlib import Path
 sys.path.insert(0,str(Path(__file__).resolve().parent.parent))
 from ssh_transport import connection_options
 import slurm_api
+from check_threads import dedicated_core_topology
 
 
 import argparse
@@ -125,12 +126,31 @@ def make_context_archive(source: Path, destination: Path) -> None:
                         filter=lambda entry: None if PurePosixPath(entry.name).name in CACHE_FILES else entry)
 
 
+def checked_build_cores(value):
+    if value == 'socket':return value
+    try:
+        number=int(value)
+        if number > 0:return number
+    except ValueError:pass
+    raise argparse.ArgumentTypeError('build cores must be a positive integer or socket')
+
+
+def build_core_count(args):
+    if args.cpus_per_task != 'socket':return args.cpus_per_task
+    partitions=[option.split('=',1)[1] for option in args.sbatch_option if option.startswith('--partition=')]
+    if not partitions:raise BuildError('Socket-sized builds require --sbatch-option=--partition=NAME.')
+    try:return dedicated_core_topology(args.host,partitions[-1])[1]
+    except (ValueError, RuntimeError, subprocess.SubprocessError) as exc:
+        raise BuildError(f'Cannot determine cores per socket for the build: {exc}') from exc
+
+
 def build_job_script(args: argparse.Namespace, *, has_context: bool) -> str:
     directives = [
         f"#SBATCH --job-name={args.name}",
         "#SBATCH --output=build.log",
         "#SBATCH --error=build.log",
-        f"#SBATCH --cpus-per-task={args.cpus_per_task}",
+        f"#SBATCH --cpus-per-task={build_core_count(args)}",
+        "#SBATCH --threads-per-core=1",
         "#SBATCH --nodes=1",
         "#SBATCH --ntasks=1",
         f"#SBATCH --mem={args.memory}",
@@ -155,6 +175,10 @@ set -euo pipefail
 
 SLURMY_BUILD_ROOT=${{SLURM_SUBMIT_DIR:?SLURM did not set SLURM_SUBMIT_DIR}}
 export SLURMY_BUILD_ROOT
+# Respect the allocation even when the recipe invokes make/cmake without -j.
+export SLURMY_BUILD_CORES=${{SLURM_CPUS_PER_TASK:-1}}
+export CMAKE_BUILD_PARALLEL_LEVEL="$SLURMY_BUILD_CORES"
+export MAKEFLAGS="${{MAKEFLAGS:-}} -j$SLURMY_BUILD_CORES"
 export SLURMY_BUILD_WORK="$SLURMY_BUILD_ROOT/work"
 export SLURMY_BUILD_OUTPUT="$SLURMY_BUILD_ROOT/output"
 
@@ -419,7 +443,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--artifact", action="append", type=checked_artifact, metavar="RELATIVE_PATH", help="required path below the output directory; repeat as needed")
     parser.add_argument("--build-policy", choices=("always", "changed"), default="always")
     parser.add_argument("--in-place", action="store_true", help="run the recipe in the copied source directory and download its entire resulting tree; no Slurmy variables are needed")
-    parser.add_argument("--cpus-per-task", type=int, default=4)
+    parser.add_argument("--cpus-per-task", type=checked_build_cores, default=4, help="physical build cores, or socket to use one socket from the selected partition (default: 4)")
     parser.add_argument("--memory", type=slurm_memory, default="4096M", help="SLURM memory request (default: 4GiB)")
     parser.add_argument("--time", type=checked_time, default="00:30:00", help="SLURM time request (default: 00:30:00)")
     parser.add_argument("--sbatch-option", action="append", type=checked_sbatch_option, default=[], metavar="--OPTION=VALUE")
@@ -431,8 +455,6 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     if not NAME_RE.fullmatch(args.name):
         raise SystemExit("--name may contain only letters, digits, ., _, and -")
-    if args.cpus_per_task <= 0:
-        raise SystemExit("--cpus-per-task must be greater than zero")
     if args.poll_interval < 0.2:
         raise SystemExit("--poll-interval must be at least 0.2 seconds")
     try:

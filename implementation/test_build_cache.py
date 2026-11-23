@@ -26,6 +26,27 @@ class BuildCacheTests(unittest.TestCase):
         subprocess.run(['bash',str(script)],env={**os.environ,'SLURM_SUBMIT_DIR':str(stage)},capture_output=True,text=True,check=True)
         self.assertEqual(json.loads((stage/'output/solver').read_text()),self.args.recipe_arg)
 
+    def test_socket_build_requests_physical_cores_and_sets_parallelism(self):
+        self.args.cpus_per_task='socket'
+        self.args.sbatch_option=['--partition=CPU-amd']
+        with patch.object(driver,'dedicated_core_topology',return_value=(2,32)) as topology:
+            script=driver.build_job_script(self.args,has_context=False)
+        topology.assert_called_once_with(self.args.host,'CPU-amd')
+        self.assertIn('#SBATCH --cpus-per-task=32',script)
+        self.assertIn('#SBATCH --threads-per-core=1',script)
+        stage=self.root/'parallel-build';stage.mkdir()
+        (stage/'recipe.sh').write_text('printf "%s\\n" "$SLURMY_BUILD_CORES" "$CMAKE_BUILD_PARALLEL_LEVEL" "$MAKEFLAGS" > "$SLURMY_BUILD_OUTPUT/solver"')
+        job=stage/'job.sh';job.write_text(script)
+        subprocess.run(['bash',str(job)],env={**os.environ,'SLURM_SUBMIT_DIR':str(stage),'SLURM_CPUS_PER_TASK':'32','MAKEFLAGS':''},capture_output=True,text=True,check=True)
+        self.assertEqual((stage/'output/solver').read_text().splitlines(),['32','32',' -j32'])
+
+    def test_socket_build_requires_partition_and_reports_lookup_failure(self):
+        self.args.cpus_per_task='socket'
+        with self.assertRaisesRegex(driver.BuildError,'require'):driver.build_job_script(self.args,has_context=False)
+        self.args.sbatch_option=['--partition=CPU-amd']
+        with patch.object(driver,'dedicated_core_topology',side_effect=ValueError('offline')):
+            with self.assertRaisesRegex(driver.BuildError,'offline'):driver.build_job_script(self.args,has_context=False)
+
     def setUp(self):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)

@@ -43,7 +43,7 @@ if(document.body.dataset.page==='new'){
  }return node;}
  $('#add-solver-resource').addEventListener('click',()=>{addResource('solver',{mode:'script',artifact:''});visibility();});
  function configurationTitle(card){const name=card.querySelector('[name="solver_name"]').value.trim(),caption=$('h3',card);const toggle=$('.collapse-toggle',caption);caption.textContent=name?`${name} Configuration`:'Solver Configuration';if(toggle){toggle.setAttribute('aria-label',`${card.classList.contains('collapsed')?'Expand':'Collapse'} ${caption.textContent}`);caption.prepend(toggle);}}
- function fill(node,values){for(const [name,value] of Object.entries(values||{})){const field=node.querySelector(`[name="${name}"]`);if(field){if(name==='cores')setCoreRequest(field,value??'1');else field.value=name==='problem_selection'&&Array.isArray(value)?value.join('\n'):name.startsWith('omit_')?String(value||false).toLowerCase():(value??'');field.refreshShell?.();}}if(node.matches('.configuration')){configurationTitle(node);updateSolverStatus(node);queueMicrotask(()=>validateSolverCommand(node));queueMicrotask(()=>checkThreads(node.querySelector('[name="threads_per_core"]')));}}
+ function fill(node,values){for(const [name,value] of Object.entries(values||{})){const field=node.querySelector(`[name="${name}"]`);if(field){if(name==='cores')setCoreRequest(field,value??'1');else field.value=name==='problem_selection'&&Array.isArray(value)?value.join('\n'):name.startsWith('omit_')?String(value||false).toLowerCase():(value??'');field.refreshShell?.();}}if(node.matches('.configuration')){configurationTitle(node);updateSolverStatus(node);queueMicrotask(()=>validateSolverCommand(node));queueMicrotask(()=>validateEnvironment(node));queueMicrotask(()=>checkThreads(node.querySelector('[name="threads_per_core"]')));}}
  for(const name of ['name','partition','account','reservation','batch_size','max_outstanding','pair_order','mode','jobpairs','configurations_file','limiter_mode','limiter_file','limiter']){const field=form.querySelector(`[name="${name}"]`);if(field&&initial[name]!==undefined)field.value=initial[name];}
  $('[name="get_computer_info"]').checked=initial.get_computer_info!==false;
  const accountField=$('#slurm-account-field'),accountSelect=form.querySelector('[name="account"]'),accountLoading=$('#slurm-account-loading'),accountStatus=$('#slurm-account-status'),accountRetry=$('#slurm-account-retry');
@@ -331,7 +331,9 @@ if(document.body.dataset.page==='new'){
   const buildSelected=rootValue('building_mode')==='create'&&value('build_mode')==='script';
   const pathReady=name=>{const input=card.querySelector(`[name="${name}"]`);return input.value.trim()&&input.dataset.validated===input.value;};
   const root=value('solver_directory');
-  const runtimeReady=root.startsWith('/')&&!root.includes('/path/to/')&&pathReady('solver_directory')&&
+  const environment=card.querySelector('[name="environment"]');
+  const environmentReady=!environment?.value.trim()||environment.dataset.environmentValidated===environment.value;
+  const runtimeReady=environmentReady&&root.startsWith('/')&&!root.includes('/path/to/')&&pathReady('solver_directory')&&
    value('command')&&value('command')!==card.querySelector('[name="command"]').placeholder&&
    card.querySelector('[name="command"]').dataset.commandValidated===solverCommandKey(card);
   const buildReady=!buildSelected||((!value('build_source')||pathReady('build_source'))&&pathReady('build_script'));
@@ -350,6 +352,22 @@ if(document.body.dataset.page==='new'){
  }
  form.addEventListener('input',event=>{const card=event.target.closest('.configuration');if(card){if(event.target.name==='solver_name')configurationTitle(card);updateSolverStatus(card);}});
  form.addEventListener('change',event=>{const card=event.target.closest('.configuration');if(card)updateSolverStatus(card);});
+ const environmentTimers=new WeakMap();
+ async function validateEnvironment(card){
+  clearTimeout(environmentTimers.get(card));
+  const input=card.querySelector('[name="environment"]'),status=card.querySelector('.environment-validation');
+  if(!input)return true;
+  const original=input.value;
+  if(!original.trim()){input.setCustomValidity('');input.dataset.environmentValidated=original;status.textContent='';updateSolverStatus(card);return true;}
+  status.className='environment-validation validation';status.textContent='Checking environment variables…';
+  try{
+   const result=await api('/api/validate-solver-environment',{environment:original});if(input.value!==original)return false;
+   input.setCustomValidity('');input.dataset.environmentValidated=original;status.className='environment-validation validation valid';status.textContent=result.message;updateSolverStatus(card);return true;
+  }catch(error){if(input.value!==original)return false;input.setCustomValidity(error.message);delete input.dataset.environmentValidated;status.className='environment-validation validation invalid';status.textContent=error.message;updateSolverStatus(card);return false;}
+ }
+ form.addEventListener('input',event=>{if(event.target.name!=='environment')return;const card=event.target.closest('.configuration');event.target.setCustomValidity('');delete event.target.dataset.environmentValidated;clearTimeout(environmentTimers.get(card));environmentTimers.set(card,setTimeout(()=>validateEnvironment(card),300));});
+ form.addEventListener('focusout',event=>{if(event.target.name==='environment')validateEnvironment(event.target.closest('.configuration'));});
+ for(const card of document.querySelectorAll('.configuration'))queueMicrotask(()=>validateEnvironment(card));
  const solverCommandTimers=new WeakMap();
  function solverCommandData(card){return {command:card.querySelector('[name="command"]').value,directory:card.querySelector('[name="solver_directory"]').value,build_on_cluster:card.querySelector('[name="build_mode"]').value==='script'};}
  function solverCommandKey(card){return JSON.stringify(solverCommandData(card));}
@@ -542,6 +560,7 @@ if(document.body.dataset.page==='new'){
  async function validSection(){
   if(step===1&&rootValue('mode')==='interactive'&&!$('#configurations .configuration'))throw new Error('Add a solver configuration or copy one from an existing workflow before continuing.');
   if(step===1&&rootValue('mode')==='interactive')await Promise.all([...document.querySelectorAll('.configuration')].map(waitForPlacement));
+  if(step===1&&rootValue('mode')==='interactive')for(const card of document.querySelectorAll('.configuration'))await validateEnvironment(card);
   const inputs=[...sections[step].querySelectorAll('input,textarea,select')].filter(n=>n.type!=='hidden'&&!n.closest('[hidden]'));
   for(const input of inputs){if(!input.value.trim()&&!input.dataset.optional){const details=input.closest('.solver-card-section,.problem-card-section,.limiter-card-section');if(details)details.open=true;input.focus();throw new Error('Fill in each visible setting before continuing.');}if(!input.checkValidity()){const details=input.closest('.solver-card-section,.problem-card-section,.limiter-card-section');if(details)details.open=true;input.reportValidity();throw new Error('Please correct the highlighted field.');}}
   for(const input of inputs.filter(n=>n.dataset.path&&n.value.trim())){if(input.dataset.validated!==input.value&&!await validatePath(input)){const details=input.closest('.solver-card-section,.problem-card-section,.limiter-card-section');if(details)details.open=true;throw new Error('Correct the path highlighted above.');}}

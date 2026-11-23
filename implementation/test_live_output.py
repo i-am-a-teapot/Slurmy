@@ -15,7 +15,7 @@ from starexec_export import export as starexec_export
 
 
 class LiveOutputTests(unittest.TestCase):
-    def run_capture(self, command, wall=5, computer_info=False):
+    def run_capture(self, command, wall=5, computer_info=False, environment=""):
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
         root = Path(temporary.name)
@@ -25,7 +25,7 @@ class LiveOutputTests(unittest.TestCase):
         problem = root/'example.p'; problem.touch()
         row = dict(solver_name='test',command=command,solver_directory=str(runtime),
                    problem=str(problem),wc_limit=wall,cpu_limit=0,mem_limit='100MiB',
-                   cores=1,threads_per_core=1,cpus='auto',exclusive_cpu='false',exclusive_node='false')
+                   cores=1,threads_per_core=1,cpus='auto',exclusive_cpu='false',exclusive_node='false',environment=environment)
         with (root/'jobpairs.csv').open('w',newline='') as stream:
             writer=csv.DictWriter(stream,fieldnames=COLUMNS);writer.writeheader();writer.writerow(row)
         (root/'building.txt').write_text(str(runtime)+'\n\n')
@@ -47,6 +47,12 @@ class LiveOutputTests(unittest.TestCase):
             logs={member.name.split('.')[-2]:archive.extractfile(member).read()
                   for member in archive if member.isfile() and member.name.endswith('.log')}
         return job,row,logs
+
+    def test_solver_receives_literal_environment_without_leaking_to_parent(self):
+        command="/bin/bash -c 'printf \"%s\\n\" \"$SLURMY_TEST_ENV\" \"$Hello\"'"
+        _,_,logs=self.run_capture(command,environment='SLURMY_TEST_ENV="$(echo unsafe); $HOME" Hello = World')
+        self.assertEqual(logs['solver'],b'$(echo unsafe); $HOME\nWorld\n')
+        self.assertNotIn('SLURMY_TEST_ENV',os.environ)
 
     def test_early_stderr_is_measured_live_and_exported_once(self):
         job,row,logs=self.run_capture("/bin/bash -c 'printf \"early error\\n\" >&2; sleep 0.8; printf \"late stdout\\n\"; exit 7'",computer_info=True)
