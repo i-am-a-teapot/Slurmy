@@ -705,11 +705,14 @@ def create_app():
                 globs.append(value)
         from problem_selection import names
         selections = data.get('problem_selections') or []
-        sources = {}
+        sources = {}; modes = {}
         for index, glob in enumerate(globs):
             selection = names(selections[index] if index < len(selections) else '')
-            sources.setdefault((glob, tuple(selection)), selection)
-        return jsonify(globs=[key[0] for key in sources], problem_selections=list(sources.values()))
+            key=(glob, tuple(selection))
+            sources.setdefault(key, selection)
+            saved_modes=data.get('problem_selection_modes') or []
+            modes.setdefault(key,saved_modes[index] if index<len(saved_modes) else ('names' if selection else 'disabled'))
+        return jsonify(globs=[key[0] for key in sources], problem_selections=list(sources.values()), problem_selection_modes=list(modes.values()))
 
     @app.get('/api/axiom-sources')
     def axiom_sources():

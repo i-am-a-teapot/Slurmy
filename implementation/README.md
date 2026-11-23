@@ -608,9 +608,11 @@ preparation, so prepare again before inspecting an updated plan.
 ## Selecting and Ordering Problem Filenames
 
 Each problem source has **Select and order specific filenames (optional)**.
-Choose **Problem names** to type one name per line, or **Files of problem names**
+Choose **Disabled** to use every matched problem, **Problem names** to type one
+name per line, or **Files of problem names**
 to import multiple text files. Files are concatenated in the displayed order;
-the resulting names remain editable and are saved inside the workflow, so exports
+only the file picker is shown in file mode, and the imported names are saved
+inside the workflow, so exports
 do not depend on the original list files. Absolute paths match the full problem
 path exactly (cluster paths may use `/share/...`); relative names match only their
 last filename component. Enter names in the desired execution order. Names must

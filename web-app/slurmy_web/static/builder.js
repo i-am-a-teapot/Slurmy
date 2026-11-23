@@ -43,7 +43,17 @@ if(document.body.dataset.page==='new'){
  }return node;}
  $('#add-solver-resource').addEventListener('click',()=>{addResource('solver',{mode:'script',artifact:''});visibility();});
  function configurationTitle(card){const name=card.querySelector('[name="solver_name"]').value.trim(),caption=$('h3',card);const toggle=$('.collapse-toggle',caption);caption.textContent=name?`${name} Configuration`:'Solver Configuration';if(toggle){toggle.setAttribute('aria-label',`${card.classList.contains('collapsed')?'Expand':'Collapse'} ${caption.textContent}`);caption.prepend(toggle);}}
- function fill(node,values){for(const [name,value] of Object.entries(values||{})){const field=node.querySelector(`[name="${name}"]`);if(field){if(name==='cores')setCoreRequest(field,value??'1');else field.value=name==='problem_selection'&&Array.isArray(value)?value.join('\n'):name.startsWith('omit_')?String(value||false).toLowerCase():(value??'');field.refreshShell?.();}}if(node.matches('.configuration')){configurationTitle(node);updateSolverStatus(node);queueMicrotask(()=>validateSolverCommand(node));queueMicrotask(()=>validateEnvironment(node));queueMicrotask(()=>checkThreads(node.querySelector('[name="threads_per_core"]')));}}
+ function initializeProblemNames(row,values){
+  const mode=row.querySelector('.problem-names-mode');if(!mode)return;
+  const text=row.querySelector('[name="problem_selection"]');
+  mode.value=values?.problem_selection_mode|| (text.value.trim()?'names':'disabled');
+  row._namesMode=mode.value;row._namesDraft=mode.value==='names'?text.value:'';row._filesDraft=mode.value==='files'?text.value:'';
+  row.querySelector('.problem-names-files').hidden=mode.value!=='files';row.querySelector('.problem-names-text').hidden=mode.value!=='names';
+  if(mode.value==='disabled')text.value='';
+  if(mode.value==='files')row.querySelector('.problem-names-status').textContent='Using the saved names from imported files. Select files to replace them.';
+  mode.refreshShell?.();
+ }
+ function fill(node,values){for(const [name,value] of Object.entries(values||{})){const field=node.querySelector(`[name="${name}"]`);if(field){if(name==='cores')setCoreRequest(field,value??'1');else field.value=name==='problem_selection'&&Array.isArray(value)?value.join('\n'):name.startsWith('omit_')?String(value||false).toLowerCase():(value??'');field.refreshShell?.();}}if(node.matches('.glob-row'))initializeProblemNames(node,values);if(node.matches('.configuration')){configurationTitle(node);updateSolverStatus(node);queueMicrotask(()=>validateSolverCommand(node));queueMicrotask(()=>validateEnvironment(node));queueMicrotask(()=>checkThreads(node.querySelector('[name="threads_per_core"]')));}}
  for(const name of ['name','partition','account','reservation','batch_size','max_outstanding','pair_order','mode','jobpairs','configurations_file','limiter_mode','limiter_file','limiter']){const field=form.querySelector(`[name="${name}"]`);if(field&&initial[name]!==undefined)field.value=initial[name];}
  $('[name="get_computer_info"]').checked=initial.get_computer_info!==false;
  const accountField=$('#slurm-account-field'),accountSelect=form.querySelector('[name="account"]'),accountLoading=$('#slurm-account-loading'),accountStatus=$('#slurm-account-status'),accountRetry=$('#slurm-account-retry');
@@ -70,7 +80,7 @@ if(document.body.dataset.page==='new'){
  $('[name="limiter_mode"]').value='inline';$('[name="limiter_file"]').value='';
  if(!editing&&!initial.limiter){$('[name="limiter_mode"]').value='inline';$('[name="limiter"]').value=`${repoRoot}/implementation/build/runsolver/runsolver --cpu-limit {{cpu_limit}} --wall-clock-limit {{wc_limit}} --rss-swap-limit {{mem_limit_mib}} --timestamp --add-eof --watcher-data {{watcher_log}} --var {{var_file}} --solver-data {{solver_log}} {{solver_command}}`;}
  for(const values of initial.configurations||[]){const card=add('configuration-template','configurations');fill(card,{...values,solver_name:values.solver_name||values.command?.trim().split(/\s+/)[0]?.split('/').pop()||''});const resource=(initial.resources||[]).find(item=>item.role==='solver'&&item.root===values.solver_directory);if(resource)fill(card,{build_mode:resource.mode,build_source:resource.source,build_script:resource.script,build_policy:resource.build_policy||'always'});}
- const globs=initial.globs?.length?initial.globs:[];for(const [index,value] of globs.entries())fill(add('glob-template','globs'),value===null?null:{glob:value,problem_selection:initial.problem_selections?.[index]||''});
+ const globs=initial.globs?.length?initial.globs:[];for(const [index,value] of globs.entries())fill(add('glob-template','globs'),value===null?null:{glob:value,problem_selection:initial.problem_selections?.[index]||'',problem_selection_mode:initial.problem_selection_modes?.[index]});
  for(const value of initial.axiom_globs?.length?initial.axiom_globs:[`tptp://${document.body.dataset.tptpVersion}/Axioms/**/*.ax`])fill(add('axiom-glob-template','axiom-globs'),{axiom_glob:value});
  let limiterLoaded=false;
  for(const values of initial.resources||[])if(values.role==='limiter'){if(!limiterLoaded){addResource('limiter',values);limiterLoaded=true;}}else if(initial.mode!=='interactive')addResource('solver',values);
@@ -112,13 +122,13 @@ if(document.body.dataset.page==='new'){
    const request=++requestId;choices=[];confirm.disabled=true;error('');
    if(!workflow.value){preview(`Select a workflow to see its ${singular} sources.`);return;}
    preview(`Loading ${singular} sources…`);
-   try{const data=await api(`/api/${singular}-sources?`+params({directory:workflow.value}));if(request!==requestId)return;choices=(data.globs||[]).map((glob,index)=>({glob,selection:data.problem_selections?.[index]||''}));preview(choices.map(item=>item.glob).join('\n')||`This workflow has no ${singular} sources.`);confirm.disabled=!choices.length;}
+   try{const data=await api(`/api/${singular}-sources?`+params({directory:workflow.value}));if(request!==requestId)return;choices=(data.globs||[]).map((glob,index)=>({glob,selection:data.problem_selections?.[index]||'',selectionMode:data.problem_selection_modes?.[index]}));preview(choices.map(item=>item.glob).join('\n')||`This workflow has no ${singular} sources.`);confirm.disabled=!choices.length;}
    catch(failure){if(request===requestId)error(failure.message);}
   });
   confirm.addEventListener('click',()=>{
    const sourceKey=(glob,selection)=>singular==='problem'?JSON.stringify([glob,selection||'']):glob;
    const existing=new Set([...document.querySelectorAll(`[name="${field}"]`)].map(input=>sourceKey(input.value.trim(),input.closest('.glob-row').querySelector('[name="problem_selection"]')?.value)));
-   for(const item of choices){const glob=item.glob,key=sourceKey(glob,item.selection);if(!existing.has(key)){const row=add(template,target);fill(row,{[field]:glob,problem_selection:item.selection});existing.add(key);validatePath($(`[name="${field}"]`,row));}}
+   for(const item of choices){const glob=item.glob,key=sourceKey(glob,item.selection);if(!existing.has(key)){const row=add(template,target);fill(row,{[field]:glob,problem_selection:item.selection,problem_selection_mode:item.selectionMode});existing.add(key);validatePath($(`[name="${field}"]`,row));}}
    dialog.close();updateProblemStatus();
   });
  }
@@ -413,14 +423,22 @@ if(document.body.dataset.page==='new'){
   if(!event.target.matches('.problem-names-mode,.problem-name-files'))return;
   const row=event.target.closest('.glob-row'),mode=row.querySelector('.problem-names-mode'),picker=row.querySelector('.problem-name-files'),text=row.querySelector('[name="problem_selection"]'),status=row.querySelector('.problem-names-status');
   row.querySelector('.problem-names-files').hidden=mode.value!=='files';
-  if(event.target===mode){picker._request=null;picker.setCustomValidity('');status.textContent='';text.readOnly=false;return;}
+  row.querySelector('.problem-names-text').hidden=mode.value!=='names';
+  if(event.target===mode){
+   picker._request=null;
+   if(row._namesMode==='files')row._filesDraft=text.value;else if(row._namesMode==='names')row._namesDraft=text.value;
+   text.value=mode.value==='files'?(row._filesDraft||''):mode.value==='names'?(row._namesDraft||''):'';
+   row._namesMode=mode.value;picker.setCustomValidity(mode.value==='files'&&!text.value.trim()&&!picker.files.length?'Choose one or more files of problem names.':'');
+   status.textContent=mode.value==='files'&&text.value.trim()?'Using the saved names from imported files. Select files to replace them.':'';
+   text.dispatchEvent(new Event('input',{bubbles:true}));await validatePath(row.querySelector('[name="glob"]'));return;
+  }
   const files=[...picker.files];if(!files.length)return;
   const request={};picker._request=request;picker.setCustomValidity('Reading files of problem names…');status.textContent='Reading files…';
   const finish=beginWork('Reading files of problem names…');
   try{
    const contents=await Promise.all(files.map(file=>file.text()));if(picker._request!==request)return;
-   text.value=contents.map(value=>value.replace(/^\uFEFF/,'')).join('\n');text.readOnly=false;
-   picker.setCustomValidity('');status.textContent='Loaded in order: '+files.map(file=>file.name).join(' → ')+'. You can edit the names below.';
+   text.value=contents.map(value=>value.replace(/^\uFEFF/,'')).join('\n');row._filesDraft=text.value;
+   picker.setCustomValidity('');status.textContent='Loaded in order: '+files.map(file=>file.name).join(' → ')+'.';
    text.dispatchEvent(new Event('input',{bubbles:true}));await validatePath(row.querySelector('[name="glob"]'));
   }catch(error){if(picker._request===request){picker.setCustomValidity('Could not read the selected files. Choose them again.');status.textContent='Could not read the selected files. The previous names have been kept.';}}
   finally{finish();}
@@ -432,7 +450,7 @@ if(document.body.dataset.page==='new'){
  for(const input of document.querySelectorAll('[name="glob"],[name="axiom_glob"]'))if(input.value.trim()&&!input.value.includes('/path/to/'))validatePath(input);
  for(const input of document.querySelectorAll('#limiter-resources [data-path]'))if(input.value.trim()&&!input.value.includes('/path/to/'))validatePath(input);
  function fields(card){return Object.fromEntries([...card.querySelectorAll('[name]')].map(n=>[n.name,n.value]));}
- function payload(){const names=['name','partition','account','reservation','batch_size','max_outstanding','pair_order','mode','jobpairs','configurations_file','building_mode','building_file','limiter_mode','limiter_file','limiter'];const data=Object.fromEntries(names.map(n=>[n,rootValue(n)]));data.host=rootValue('host');data.get_computer_info=form.querySelector('[name="get_computer_info"]').checked;const cards=[...document.querySelectorAll('.configuration')];data.configurations=cards.map(card=>{const row=fields(card);for(const key of Object.keys(row))if(key.startsWith('build_'))delete row[key];row.cpus='auto';return row;});data.resources=[...document.querySelectorAll('.resource')].sort((a,b)=>Number(a.dataset.resourceOrder)-Number(b.dataset.resourceOrder)).filter(node=>data.mode!=='interactive'||node.dataset.resourceRole==='limiter').map(node=>({...fields(node),role:node.dataset.resourceRole}));if(data.mode==='interactive'&&data.building_mode==='create'){const seen=new Map();for(const card of cards){const value=fields(card);const resource={role:'solver',root:value.solver_directory,mode:value.build_mode,source:value.build_source,script:value.build_script,build_policy:value.build_policy,artifact:value.build_mode==='script'?solverArtifact(value.command,value.solver_directory):''};const previous=seen.get(resource.root);if(previous){if(resource.mode!=='none'&&previous.mode!=='none'&&JSON.stringify(resource)!==JSON.stringify(previous))throw new Error(`Conflicting build settings for solver root ${resource.root}`);if(previous.mode==='none'&&resource.mode!=='none')Object.assign(previous,resource);}else{seen.set(resource.root,resource);data.resources.push(resource);}}}data.globs=[...document.querySelectorAll('[name="glob"]')].map(n=>n.value);data.problem_selections=[...document.querySelectorAll('[name="problem_selection"]')].map(n=>n.value);data.axiom_mode='custom';data.axiom_globs=[...document.querySelectorAll('[name="axiom_glob"]')].map(n=>n.value);return data;}
+ function payload(){const names=['name','partition','account','reservation','batch_size','max_outstanding','pair_order','mode','jobpairs','configurations_file','building_mode','building_file','limiter_mode','limiter_file','limiter'];const data=Object.fromEntries(names.map(n=>[n,rootValue(n)]));data.host=rootValue('host');data.get_computer_info=form.querySelector('[name="get_computer_info"]').checked;const cards=[...document.querySelectorAll('.configuration')];data.configurations=cards.map(card=>{const row=fields(card);for(const key of Object.keys(row))if(key.startsWith('build_'))delete row[key];row.cpus='auto';return row;});data.resources=[...document.querySelectorAll('.resource')].sort((a,b)=>Number(a.dataset.resourceOrder)-Number(b.dataset.resourceOrder)).filter(node=>data.mode!=='interactive'||node.dataset.resourceRole==='limiter').map(node=>({...fields(node),role:node.dataset.resourceRole}));if(data.mode==='interactive'&&data.building_mode==='create'){const seen=new Map();for(const card of cards){const value=fields(card);const resource={role:'solver',root:value.solver_directory,mode:value.build_mode,source:value.build_source,script:value.build_script,build_policy:value.build_policy,artifact:value.build_mode==='script'?solverArtifact(value.command,value.solver_directory):''};const previous=seen.get(resource.root);if(previous){if(resource.mode!=='none'&&previous.mode!=='none'&&JSON.stringify(resource)!==JSON.stringify(previous))throw new Error(`Conflicting build settings for solver root ${resource.root}`);if(previous.mode==='none'&&resource.mode!=='none')Object.assign(previous,resource);}else{seen.set(resource.root,resource);data.resources.push(resource);}}}data.globs=[...document.querySelectorAll('[name="glob"]')].map(n=>n.value);data.problem_selections=[...document.querySelectorAll('[name="problem_selection"]')].map(n=>n.value);data.problem_selection_modes=[...document.querySelectorAll('.problem-names-mode')].map(n=>n.value);data.axiom_mode='custom';data.axiom_globs=[...document.querySelectorAll('[name="axiom_glob"]')].map(n=>n.value);return data;}
  function solverArtifact(command,root){const executable=command.trim().match(/^(?:'([^']+)'|"([^"]+)"|(\S+))/)?.slice(1).find(Boolean)||'';if(!executable)throw new Error('Enter the solver command before configuring its build.');const path=executable.startsWith(root+'/')?executable.slice(root.length+1):executable.replace(/^\.\//,'');if(path.startsWith('/')||path==='..'||path.startsWith('../')||path.includes('/../')||path.includes('{{'))throw new Error('For a remote build, start the solver command with an executable relative to the solver root.');return path;}
  const batchInput=form.querySelector('[name="batch_size"]');
  let batchRequest=0,batchTimer=null,lastBatchSuggestion=null;
