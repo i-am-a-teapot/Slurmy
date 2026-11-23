@@ -638,6 +638,7 @@ details[data-section-state="closing"] > summary::before { transform: rotate(0deg
 .cluster-status-row .cluster-controls label { flex-direction: row; align-items: center; gap: 10px; min-width: 0; }
 .problem-source-inputs { flex: 1; min-width: 0; }
 .problem-filename-selection { margin-bottom: 16px; }
+.problem-filename-selection[open] > summary { margin-bottom: 12px; }
 .problem-filename-selection textarea { width: 100%; }
 .prepared-batch-inspector > summary { gap: 12px; }
 
