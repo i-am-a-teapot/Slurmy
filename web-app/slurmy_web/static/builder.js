@@ -391,6 +391,23 @@ if(document.body.dataset.page==='new'){
  form.addEventListener('focusout',event=>{if(event.target.matches('[data-path]'))validatePath(event.target);});
  form.addEventListener('input',event=>{if(event.target.name==='problem_selection'){const input=event.target.closest('.glob-row').querySelector('[name="glob"]');delete input.dataset.validated;}});
  form.addEventListener('focusout',event=>{if(event.target.name==='problem_selection')validatePath(event.target.closest('.glob-row').querySelector('[name="glob"]'));});
+ form.addEventListener('change',async event=>{
+  if(!event.target.matches('.problem-names-mode,.problem-name-files'))return;
+  const row=event.target.closest('.glob-row'),mode=row.querySelector('.problem-names-mode'),picker=row.querySelector('.problem-name-files'),text=row.querySelector('[name="problem_selection"]'),status=row.querySelector('.problem-names-status');
+  row.querySelector('.problem-names-files').hidden=mode.value!=='files';
+  if(event.target===mode){picker._request=null;picker.setCustomValidity('');status.textContent='';text.readOnly=false;return;}
+  const files=[...picker.files];if(!files.length)return;
+  const request={};picker._request=request;picker.setCustomValidity('Reading files of problem names…');status.textContent='Reading files…';
+  const finish=beginWork('Reading files of problem names…');
+  try{
+   const contents=await Promise.all(files.map(file=>file.text()));if(picker._request!==request)return;
+   text.value=contents.map(value=>value.replace(/^\uFEFF/,'')).join('\n');text.readOnly=false;
+   picker.setCustomValidity('');status.textContent='Loaded in order: '+files.map(file=>file.name).join(' → ')+'. You can edit the names below.';
+   text.dispatchEvent(new Event('input',{bubbles:true}));await validatePath(row.querySelector('[name="glob"]'));
+  }catch(error){if(picker._request===request){picker.setCustomValidity('Could not read the selected files. Choose them again.');status.textContent='Could not read the selected files. The previous names have been kept.';}}
+  finally{finish();}
+ });
+
  for(const card of document.querySelectorAll('.configuration'))for(const input of card.querySelectorAll('[data-path]')){
   if(input.value.trim()&&!input.value.includes('/path/to/'))validatePath(input);
  }

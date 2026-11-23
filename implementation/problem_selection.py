@@ -12,12 +12,17 @@ def select(matches, selection=''):
     requested=names(selection)
     files=sorted(map(str,matches))
     if not requested:return files
-    by_name={}
-    for path in files:by_name.setdefault(PurePosixPath(path).name,[]).append(path)
+    by_name={};by_path={}
+    for path in files:
+        by_name.setdefault(PurePosixPath(path).name,[]).append(path)
+        by_path.setdefault(path,[]).append(path)
+        if path.startswith('tptp:'):by_path.setdefault(path[5:],[]).append(path)
     selected=[]
     for name in requested:
-        if PurePosixPath(name).name!=name:raise ValueError('Use filenames, not paths, in the problem selection: '+name)
-        found=by_name.get(name,[])
+        if PurePosixPath(name).is_absolute() or name.startswith('tptp:'):
+            found=by_path.get(name,[])
+        else:
+            found=by_name.get(PurePosixPath(name).name,[])
         if not found:raise ValueError('Selected problem filename was not found in this source: '+name)
         if len(found)!=1:raise ValueError('Selected filename is ambiguous; narrow the problem source: '+name)
         selected.append(found[0])

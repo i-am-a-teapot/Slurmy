@@ -608,7 +608,12 @@ preparation, so prepare again before inspecting an updated plan.
 ## Selecting and Ordering Problem Filenames
 
 Each problem source has **Select and order specific filenames (optional)**.
-Enter one filename per line to keep only those files in that order. Names must
+Choose **Problem names** to type one name per line, or **Files of problem names**
+to import multiple text files. Files are concatenated in the displayed order;
+the resulting names remain editable and are saved inside the workflow, so exports
+do not depend on the original list files. Absolute paths match the full problem
+path exactly (cluster paths may use `/share/...`); relative names match only their
+last filename component. Enter names in the desired execution order. Names must
 match exactly one file in that source; missing or ambiguous names are errors.
 Leave the list blank to use all matches. This works for local globs, archives and
 cluster TPTP globs. The ordered lists are saved in `workflow.json` and generated

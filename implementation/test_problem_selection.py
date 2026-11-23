@@ -20,6 +20,15 @@ class ProblemSelectionTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,'not found'):problem_selection.select(files,'missing.p')
         with self.assertRaisesRegex(ValueError,'ambiguous'):problem_selection.select(['/a/p.p','/b/p.p'],'p.p')
 
+    def test_absolute_paths_match_exactly_and_relative_paths_match_basename(self):
+        files=['/a/P.p','/b/P.p','/a/Q.p']
+        self.assertEqual(problem_selection.select(files,'/b/P.p\nrelative/Q.p'),['/b/P.p','/a/Q.p'])
+        with self.assertRaisesRegex(ValueError,'not found'):problem_selection.select(files,'/missing/Q.p')
+        with self.assertRaisesRegex(ValueError,'ambiguous'):problem_selection.select(files,'relative/P.p')
+        remote=['tptp:/share/datasets/TPTP/TPTP-v10.0.0/Problems/SET/SET001.p']
+        self.assertEqual(problem_selection.select(remote,remote[0][5:]),remote)
+        self.assertEqual(problem_selection.select(remote,'SET/SET001.p'),remote)
+
     def test_cli_and_problem_major_order_keep_selected_order(self):
         with tempfile.TemporaryDirectory() as folder:
             root=Path(folder)

@@ -1,5 +1,7 @@
 """Workflow defaults, copying source globs, and remote axiom validation."""
 import json
+import shutil
+import subprocess
 from pathlib import Path
 import tempfile
 import unittest
@@ -74,3 +76,29 @@ class BuilderUpdateTests(unittest.TestCase):
         self.assertEqual(result['suggested_batches'],40)
         self.assertEqual(result['recommended_batch_size'],result['batch_size'])
         self.assertTrue(result['suggested_fits'])
+
+    @unittest.skipUnless(shutil.which('node'), 'Node is needed for the file import regression check')
+    def test_multiple_name_files_are_read_in_order_and_failures_keep_previous_names(self):
+        source=(Path(__file__).parent/'slurmy_web/static/builder.js').read_text()
+        start=source.index(" form.addEventListener('change',async event=>{\n  if(!event.target.matches('.problem-names-mode")
+        end=source.index("\n for(const card",start)
+        handler=source[start:end]
+        program=r'''
+const assert=require('assert');let change,validated=0;
+const form={addEventListener:(type,fn)=>change=fn};
+const mode={value:'files'},status={},panel={},glob={};
+const text={value:'old.p',dispatchEvent:()=>{}};
+const picker={files:[{name:'one.txt',text:async()=>"\uFEFFB.p\nA.p"},{name:'two.txt',text:async()=>"/other/C.p\nrelative/D.p"}],matches:()=>true,setCustomValidity(value){this.error=value},closest:()=>row};
+const row={querySelector:selector=>({'.problem-names-mode':mode,'.problem-name-files':picker,'[name="problem_selection"]':text,'.problem-names-status':status,'.problem-names-files':panel,'[name="glob"]':glob}[selector])};
+const beginWork=()=>()=>{};const validatePath=async()=>{validated++};
+'''+handler+r'''
+(async()=>{
+await change({target:picker});
+assert.equal(text.value,'B.p\nA.p\n/other/C.p\nrelative/D.p');assert.equal(validated,1);assert.equal(picker.error,'');
+assert(status.textContent.includes('one.txt → two.txt'));
+picker.files=[{name:'bad.txt',text:async()=>{throw Error('read failed')}}];
+const previous=text.value;await change({target:picker});assert.equal(text.value,previous);assert(picker.error);assert.equal(validated,1);
+})().catch(error=>{console.error(error);process.exitCode=1});
+'''
+        result=subprocess.run(['node','-e',program],capture_output=True,text=True)
+        self.assertEqual(result.returncode,0,result.stderr)
